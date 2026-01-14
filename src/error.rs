@@ -43,6 +43,12 @@ pub enum Error {
 
     /// Invalid arena state detected.
     InvalidArenaState,
+
+    /// Class name already exists in registry.
+    ClassAlreadyExists,
+
+    /// Inheritance cycle detected.
+    InheritanceCycle,
 }
 
 impl fmt::Display for Error {
@@ -61,6 +67,8 @@ impl fmt::Display for Error {
             Error::RefCountOverflow => write!(f, "Reference count overflow detected"),
             Error::InvalidPointer { ptr } => write!(f, "Invalid pointer: {ptr:#x}"),
             Error::InvalidArenaState => write!(f, "Invalid arena state"),
+            Error::ClassAlreadyExists => write!(f, "Class name already exists in registry"),
+            Error::InheritanceCycle => write!(f, "Inheritance cycle detected"),
         }
     }
 }

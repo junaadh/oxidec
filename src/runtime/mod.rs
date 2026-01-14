@@ -35,9 +35,15 @@
 
 pub mod arena;
 pub mod string;
+pub mod selector;
+pub mod class;
+pub mod object;
 
 pub use arena::{Arena, LocalArena};
 pub use string::RuntimeString;
+pub use selector::Selector;
+pub use class::{Class, Method};
+pub use object::Object;
 
 use std::sync::OnceLock;
 
