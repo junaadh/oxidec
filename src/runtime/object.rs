@@ -1,28 +1,30 @@
-//! Object allocation and lifecycle management for the `OxideC` runtime.
+//! `Object` allocation and lifecycle management for the ``OxideC`` runtime.
 //!
 //! This module implements the object system with:
 //! - Reference counting with atomic operations
 //! - Automatic memory management (retain/release)
 //! - Thread-safe object lifecycle
-//! - Class isa pointers for dynamic dispatch
+//! - `Class` isa pointers for dynamic dispatch
 //!
 //! # Architecture
 //!
-//! Objects are heap-allocated with manual memory management:
+//! `Object`s are heap-allocated with manual memory management:
 //! - Each object has an atomic reference count
-//! - Objects are deallocated when refcount reaches 0
-//! - Thread-safe via atomic operations (AcqRel ordering)
+//! - `Object`s are deallocated when refcount reaches 0
+//! - Thread-safe via atomic operations (`AcqRel` ordering)
 //! - Clone is shallow (pointer duplication with refcount increment)
 //!
 //! # Thread Safety
 //!
-//! Objects are `Send + Sync` when reference counting is atomic:
+//! `Object`s are `Send + Sync` when reference counting is atomic:
 //! - Multiple threads can hold references to same object
 //! - retain/release are thread-safe (atomic operations)
-//! - Object data access requires external synchronization (Phase 2)
+//! - `Object` data access requires external synchronization (Phase 2)
 
 use crate::error::Result;
 use crate::runtime::Class;
+use crate::runtime::MessageArgs;
+use crate::runtime::Selector;
 use std::fmt;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -31,14 +33,73 @@ use std::sync::atomic::{AtomicU32, Ordering};
 // We use raw pointer to avoid circular dependency
 type ClassInnerPtr = *const ();
 
+/// Opaque pointer to a raw object.
+///
+/// This type wraps a raw pointer to `RawObject` while keeping the internal
+/// type private. It is used in public APIs (like method implementations)
+/// to avoid exposing the `RawObject` struct directly.
+///
+/// # Type Safety
+///
+/// `ObjectPtr` is opaque - users of the API cannot directly access or
+/// manipulate the underlying `RawObject`. This maintains encapsulation
+/// while still allowing low-level code (like the dispatch system) to
+/// work with raw pointers.
+///
+/// # Thread Safety
+///
+/// `ObjectPtr` is `Send + Sync` when the underlying `RawObject` is
+/// reference-counted with atomic operations.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use oxidec::runtime::ObjectPtr;
+///
+/// // In method implementations, ObjectPtr is used as the self parameter
+/// unsafe extern "C" fn my_method(
+///     _self: ObjectPtr,
+///     _cmd: oxidec::runtime::Selector,
+///     _args: *const *mut u8,
+///     _ret: *mut u8,
+/// ) {
+///     // Method implementation
+/// }
+/// ```
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObjectPtr(*mut RawObject);
+
+unsafe impl Send for ObjectPtr {}
+unsafe impl Sync for ObjectPtr {}
+
+impl ObjectPtr {
+    /// Creates an `ObjectPtr` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `ptr` points to a valid `RawObject`.
+    #[must_use]
+    pub(crate) unsafe fn from_raw(ptr: *mut RawObject) -> Self {
+        ObjectPtr(ptr)
+    }
+
+    /// Returns the underlying raw pointer.
+    #[must_use]
+    #[allow(dead_code)]
+    pub(crate) fn as_raw_ptr(self) -> *mut RawObject {
+        self.0
+    }
+}
+
 /// Raw object representation allocated on heap.
 ///
-/// This struct is **not** allocated in the arena (unlike Selector/Class)
+/// This struct is **not** allocated in the arena (unlike `Selector`/`Class`)
 /// because objects have individual lifetimes controlled by reference counting.
 #[repr(C)]
 pub(crate) struct RawObject {
     /// Isa pointer: class that this object is an instance of
-    /// Points to ClassInner in arena (never deallocated)
+    /// Points to `ClassInner` in arena (never deallocated)
     /// Stored as opaque pointer to avoid circular dependency
     class_ptr: ClassInnerPtr,
     /// Object flags (reserved for future use: tagged pointers, etc.)
@@ -51,23 +112,23 @@ pub(crate) struct RawObject {
     payload: [u8; 0],
 }
 
-/// Object represents a runtime instance with dynamic dispatch.
+/// `Object` represents a runtime instance with dynamic dispatch.
 ///
-/// Objects are reference-counted and support:
+/// `Object`s are reference-counted and support:
 /// - Automatic memory management (retain/release)
 /// - Dynamic dispatch via isa pointer
 /// - Thread-safe reference counting
 ///
 /// # Memory Layout
 ///
-/// Objects use manual memory management for performance:
-/// - RawObject allocated on heap (not arena, for per-instance lifecycle)
+/// `Object`s use manual memory management for performance:
+/// - `RawObject` allocated on heap (not arena, for per-instance lifecycle)
 /// - Reference counted with atomic operations
-/// - Class pointer (isa) for dynamic dispatch
+/// - `Class` pointer (isa) for dynamic dispatch
 ///
 /// # Thread Safety
 ///
-/// Objects are `Send + Sync` when reference counting is atomic:
+/// `Object`s are `Send + Sync` when reference counting is atomic:
 /// - Multiple threads can hold references to same object
 /// - retain/release are thread-safe (atomic operations)
 /// - Method dispatch requires external synchronization (Phase 2)
@@ -119,6 +180,10 @@ impl Object {
     /// assert_eq!(obj.class().name(), "MyClass");
     /// assert_eq!(obj.refcount(), 1);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::OutOfMemory`] if object allocation fails.
     pub fn new(class: &Class) -> Result<Self> {
         // Get class pointer for isa
         // Store as opaque pointer to avoid circular dependency
@@ -154,7 +219,7 @@ impl Object {
     ///
     /// # Panics
     ///
-    /// Panics if refcount overflows (u32::MAX).
+    /// Panics if refcount overflows (`u32::MAX`).
     ///
     /// # Example
     ///
@@ -177,9 +242,10 @@ impl Object {
         let old = obj.refcount.fetch_add(1, Ordering::AcqRel);
 
         // Check for overflow
-        if old == u32::MAX {
-            panic!("Reference count overflow in Object::retain");
-        }
+        assert!(
+            old != u32::MAX,
+            "Reference count overflow in Object::retain"
+        );
     }
 
     /// Decrements the reference count (release).
@@ -279,24 +345,154 @@ impl Object {
     /// ```
     #[must_use]
     pub fn refcount(&self) -> u32 {
-        // SAFETY: self.ptr points to valid RawObject
+        // SAFETY: self.ptr points to valid Raw`Object`
         let obj = unsafe { &*self.ptr.as_ptr() };
 
         // Load with Acquire ordering to see all previous releases
         obj.refcount.load(Ordering::Acquire)
     }
+
+    /// Returns the raw pointer to the object data.
+    ///
+    /// This is used internally by the message dispatch system to pass
+    /// the object pointer to method implementations.
+    ///
+    /// # Returns
+    ///
+    /// Raw pointer to the Raw`Object` (never null while object is alive).
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer is valid only while the `Object` reference exists.
+    /// Do not store it beyond the lifetime of the `Object` reference.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Object};
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// let obj = Object::new(&class).unwrap();
+    /// let raw_ptr = obj.as_raw();
+    /// ```
+    #[must_use]
+    pub fn as_raw(&self) -> ObjectPtr {
+        // SAFETY: self.ptr is a valid NonNull<Raw`Object`> (guaranteed by `Object` invariants)
+        unsafe { ObjectPtr::from_raw(self.ptr.as_ptr()) }
+    }
+
+    /// Sends a message to this object with no arguments.
+    ///
+    /// This is the primary method for dynamic message passing in the `OxideC` runtime.
+    /// It performs method lookup, argument marshalling, and function pointer invocation.
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - The method selector to invoke
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(retval))` - `Method` returned a value (encoded as usize)
+    /// - `Ok(None)` - `Method` returned void
+    /// - `Err(Error::`Selector`NotFound)` - `Method` not found
+    /// - `Err(Error::ArgumentCountMismatch)` - Wrong number of arguments
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe. Multiple threads can send messages concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use oxidec::{Class, Object, Selector};
+    /// use oxidec::runtime::MessageArgs;
+    /// use std::str::FromStr;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// let obj = Object::new(&class).unwrap();
+    /// let sel = Selector::from_str("doSomething").unwrap();
+    ///
+    /// // No arguments
+    /// match obj.send_message(&sel, &MessageArgs::None) {
+    ///     Ok(retval) => println!("Return value: {:?}", retval),
+    ///     Err(e) => println!("Error: {:?}", e),
+    /// }
+    ///
+    /// // One argument
+    /// match obj.send_message(&sel, &MessageArgs::one(42)) {
+    ///     Ok(retval) => println!("Return value: {:?}", retval),
+    ///     Err(e) => println!("Error: {:?}", e),
+    /// }
+    ///
+    /// // Two arguments
+    /// match obj.send_message(&sel, &MessageArgs::two(10, 20)) {
+    ///     Ok(retval) => println!("Return value: {:?}", retval),
+    ///     Err(e) => println!("Error: {:?}", e),
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SelectorNotFound`] if the selector is not found in the
+    /// object's class hierarchy, or [`Error::ArgumentCountMismatch`] if the
+    /// number of arguments doesn't match the method signature.
+    pub fn send_message(
+        &self,
+        selector: &Selector,
+        args: &MessageArgs,
+    ) -> Result<Option<usize>> {
+        // SAFETY: self is a valid reference (lifetime protected)
+        // The object's refcount ensures it remains alive during the call
+        unsafe { crate::runtime::dispatch::send_message(self, selector, args) }
+    }
+
+    /// Checks if this object responds to a given selector.
+    ///
+    /// This method walks the inheritance chain to determine if the object
+    /// (or any of its superclasses) implements a method with the given selector.
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - The method selector to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the object responds to this selector, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use oxidec::{Class, Object, Selector};
+    /// use std::str::FromStr;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// let obj = Object::new(&class).unwrap();
+    /// let sel = Selector::from_str("doSomething").unwrap();
+    ///
+    /// if obj.responds_to(&sel) {
+    ///     println!("Object responds to doSomething");
+    /// } else {
+    ///     println!("Object does not respond to doSomething");
+    /// }
+    /// ```
+    #[must_use]
+    pub fn responds_to(&self, selector: &Selector) -> bool {
+        // Get object's class and lookup method (searches inheritance chain)
+        let class = self.class();
+        class.lookup_method(selector).is_some()
+    }
 }
 
 // SAFETY: Object is Send because:
-// - RawObject is heap-allocated with Box
+// - Raw`Object` is heap-allocated with Box
 // - Atomic refcounting prevents data races
-// - Class pointer points to arena (never moves)
+// - `Class` pointer points to arena (never moves)
 unsafe impl Send for Object {}
 
 // SAFETY: Object is Sync because:
 // - All accesses are through immutable references (retain/release/isa)
 // - Atomic refcount prevents data races
-// - Class pointer is immutable (set at creation, never changed)
+// - `Class` pointer is immutable (set at creation, never changed)
 unsafe impl Sync for Object {}
 
 impl Clone for Object {
@@ -304,9 +500,7 @@ impl Clone for Object {
         self.retain();
 
         // SAFETY: ptr is still valid (we just incremented refcount)
-        Object {
-            ptr: self.ptr,
-        }
+        Object { ptr: self.ptr }
     }
 }
 
@@ -328,7 +522,7 @@ impl Eq for Object {}
 
 impl fmt::Debug for Object {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Object")
+        f.debug_struct("`Object`")
             .field("class", &self.class().name())
             .field("refcount", &self.refcount())
             .finish()
@@ -337,7 +531,20 @@ impl fmt::Debug for Object {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
+    use crate::runtime::RuntimeString;
+    use crate::runtime::get_global_arena;
+    use crate::runtime::selector::SelectorHandle;
+
+    unsafe extern "C" fn test_impl(
+        _self: ObjectPtr,
+        _cmd: SelectorHandle,
+        _args: *const *mut u8,
+        _ret: *mut u8,
+    ) {
+    }
 
     fn create_test_class(name: &str) -> Class {
         Class::new_root(name).expect("Failed to create test class")
@@ -426,7 +633,7 @@ mod tests {
         let class = create_test_class("ObjDebugTest");
         let obj = Object::new(&class).unwrap();
 
-        let debug_str = format!("{:?}", obj);
+        let debug_str = format!("{obj:?}");
 
         assert!(debug_str.contains("ObjDebugTest"));
         assert!(debug_str.contains("refcount"));
@@ -447,5 +654,119 @@ mod tests {
 
         // Should panic on overflow
         obj.retain();
+    }
+
+    #[test]
+    fn test_send_message_basic() {
+        let class = create_test_class("SendMsgTest");
+        let sel = Selector::from_str("testMethod").unwrap();
+        let arena = get_global_arena();
+
+        let method = crate::runtime::class::Method {
+            selector: sel.clone(),
+            imp: test_impl,
+            types: RuntimeString::new("v@:", arena),
+        };
+        class.add_method(method).unwrap();
+
+        // Create object and send message
+        let obj = Object::new(&class).unwrap();
+        let result = obj.send_message(&sel, &MessageArgs::None);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None); // Void return
+    }
+
+    #[test]
+    fn test_send_message_selector_not_found() {
+        let class = create_test_class("SendNotFoundTest");
+        let sel = Selector::from_str("nonExistentMethod").unwrap();
+        let obj = Object::new(&class).unwrap();
+
+        let result = obj.send_message(&sel, &MessageArgs::None);
+        assert!(matches!(result, Err(crate::error::Error::SelectorNotFound)));
+    }
+
+    #[test]
+    fn test_responds_to() {
+        let class = create_test_class("RespondsToTest");
+        let sel = Selector::from_str("existingMethod").unwrap();
+        let arena = get_global_arena();
+
+        let method = crate::runtime::class::Method {
+            selector: sel.clone(),
+            imp: test_impl,
+            types: RuntimeString::new("v@:", arena),
+        };
+        class.add_method(method).unwrap();
+
+        let obj = Object::new(&class).unwrap();
+
+        // `Object` should respond to existing method
+        assert!(obj.responds_to(&sel));
+
+        // `Object` should not respond to non-existent method
+        let non_existent = Selector::from_str("nonExistentMethod").unwrap();
+        assert!(!obj.responds_to(&non_existent));
+    }
+
+    #[test]
+    fn test_responds_to_inherited() {
+        // Test that responds_to works with inherited methods
+        let parent = create_test_class("RespondsToParent");
+        let sel = Selector::from_str("inheritedMethod").unwrap();
+        let arena = get_global_arena();
+
+        let method = crate::runtime::class::Method {
+            selector: sel.clone(),
+            imp: test_impl,
+            types: RuntimeString::new("v@:", arena),
+        };
+        parent.add_method(method).unwrap();
+
+        // Create child class
+        let child = Class::new("RespondsToChild", &parent).unwrap();
+        let obj = Object::new(&child).unwrap();
+
+        // Child object should respond to parent's method
+        assert!(obj.responds_to(&sel));
+    }
+
+    #[test]
+    fn test_send_message_1_basic() {
+        let class = create_test_class("SendMsg1Test");
+        let sel = Selector::from_str("methodWithArg:").unwrap();
+        let arena = get_global_arena();
+
+        let method = crate::runtime::class::Method {
+            selector: sel.clone(),
+            imp: test_impl,
+            types: RuntimeString::new("v@:i", arena), // void return, int arg
+        };
+        class.add_method(method).unwrap();
+
+        let obj = Object::new(&class).unwrap();
+        let result = obj.send_message(&sel, &MessageArgs::one(42));
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_send_message_2_basic() {
+        let class = create_test_class("SendMsg2Test");
+        let sel = Selector::from_str("method:withArg2:").unwrap();
+        let arena = get_global_arena();
+
+        let method = crate::runtime::class::Method {
+            selector: sel.clone(),
+            imp: test_impl,
+            types: RuntimeString::new("v@:ii", arena), // void, two int args
+        };
+        class.add_method(method).unwrap();
+
+        let obj = Object::new(&class).unwrap();
+        let result = obj.send_message(&sel, &MessageArgs::two(10, 20));
+
+        assert!(result.is_ok());
     }
 }

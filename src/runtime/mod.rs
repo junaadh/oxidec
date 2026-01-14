@@ -2,7 +2,7 @@
 //!
 //! This module provides the core runtime infrastructure for `OxideC`, including:
 //!
-//! - Arena allocation for long-lived metadata
+//! - `Arena` allocation for long-lived metadata
 //! - Thread-safe and thread-local allocators
 //! - Runtime initialization and global state
 //!
@@ -11,12 +11,13 @@
 //! The runtime is organized into several modules:
 //!
 //! - [`arena`]: Arena allocators for high-performance memory allocation
-//! - `object`: Object allocation and lifecycle management (TODO)
-//! - `class`: Class creation and inheritance (TODO)
-//! - `selector`: Selector interning and caching (TODO)
-//! - `dispatch`: Message dispatch system (TODO)
-//! - `cache`: Method caching (TODO)
-//! - `protocol`: Protocol conformance checking (TODO)
+//! - [`string`]: Runtime string type with SSO and COW (✓ Implemented)
+//! - [`selector`]: Selector interning and caching (✓ Implemented)
+//! - [`class`]: Class creation, inheritance, and method registry (✓ Implemented)
+//! - [`object`]: Object allocation and reference counting (✓ Implemented)
+//! - `dispatch`: Message dispatch system (Phase 2 - TODO)
+//! - `cache`: Method caching (Phase 2 - TODO)
+//! - `protocol`: Protocol conformance checking (Phase 3 - TODO)
 //!
 //! # Global Arena
 //!
@@ -34,16 +35,20 @@
 //! ```
 
 pub mod arena;
-pub mod string;
-pub mod selector;
 pub mod class;
+pub mod dispatch;
+pub mod encoding;
+pub mod message;
 pub mod object;
+pub mod selector;
+pub mod string;
 
 pub use arena::{Arena, LocalArena};
-pub use string::RuntimeString;
-pub use selector::Selector;
 pub use class::{Class, Method};
-pub use object::Object;
+pub use message::MessageArgs;
+pub use object::{Object, ObjectPtr};
+pub use selector::Selector;
+pub use string::RuntimeString;
 
 use std::sync::OnceLock;
 
@@ -94,7 +99,10 @@ mod tests {
         let arena2 = get_global_arena();
 
         // Should return the same instance
-        assert_eq!(arena1 as *const Arena as usize, arena2 as *const Arena as usize);
+        assert_eq!(
+            std::ptr::from_ref::<Arena>(arena1) as usize,
+            std::ptr::from_ref::<Arena>(arena2) as usize,
+        );
     }
 
     #[test]

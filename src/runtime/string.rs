@@ -1,13 +1,20 @@
-//! RuntimeString: Optimized string type for the `OxideC` runtime.
+//! `RuntimeString`: Optimized string type for the `OxideC` runtime.
 //!
 //! This module implements a high-performance string abstraction with:
 //! - **Small String Optimization (SSO)**: Strings ≤ 15 bytes stored inline (zero allocation)
 //! - **Tagged Encoding**: Support for both UTF-8 and Latin-1/ASCII encoding
 //! - **Copy-on-Write**: Efficient mutation via reference counting
-//! - **Arena Allocation**: Large strings stored in arena for stable pointers
+//! - **`Arena` Allocation**: Large strings stored in arena for stable pointers
 //!
 //! # Memory Layout
 //!
+
+// Allow cast truncation - inline strings max 15 bytes, fits in u8
+#![allow(clippy::cast_possible_truncation)]
+// Allow pointer constness casts - needed for string data mutability
+#![allow(clippy::ptr_cast_constness)]
+// Allow ptr_as_ptr - some pointer casts don't change constness
+#![allow(clippy::ptr_as_ptr)]
 //! [`RuntimeString`] uses a tagged pointer representation:
 //! - **Bit 0 (LSB)**: 1 = Inline SSO, 0 = Heap pointer
 //! - **Bit 1**: 0 = UTF-8, 1 = Latin-1/ASCII
@@ -35,7 +42,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
-use std::sync::{RwLock, OnceLock};
+use std::sync::{OnceLock, RwLock};
 
 /// Maximum size for inline string storage (Small String Optimization).
 const SSO_THRESHOLD: usize = 15;
@@ -46,10 +53,10 @@ const SSO_TAG_BIT: usize = 0x01;
 /// Tag bit indicating Latin-1 encoding (bit 1 = 1).
 const ENCODING_BIT: usize = 0x02;
 
-/// HeapString flag: Latin-1/ASCII encoding (vs UTF-8).
+/// `HeapString` flag: Latin-1/ASCII encoding (vs UTF-8).
 const FLAG_ENCODING_LATIN1: u8 = 0x01;
 
-/// HeapString flag: String has been interned.
+/// `HeapString` flag: String has been interned.
 #[allow(dead_code)] // Reserved for future interning system enhancements
 const FLAG_INTERNED: u8 = 0x02;
 
@@ -65,13 +72,13 @@ union RuntimeStringData {
     inline: [u8; 16],
 }
 
-/// An optimized string type for the `OxideC` runtime.
+/// An optimized string type for the ``OxideC`` runtime.
 ///
 /// `RuntimeString` provides:
 /// - **Small String Optimization (SSO)**: Strings ≤ 15 bytes stored inline
 /// - **Tagged encoding**: UTF-8 vs Latin-1/ASCII discrimination
 /// - **Copy-on-Write**: Efficient mutation via reference counting
-/// - **Arena allocation**: Stable pointers for heap-allocated strings
+/// - **`Arena` allocation**: Stable pointers for heap-allocated strings
 ///
 /// # Memory Layout
 ///
@@ -80,10 +87,10 @@ union RuntimeStringData {
 /// **Inline SSO (≤ 15 bytes)**:
 /// - Stored directly in the `data.inline` array
 /// - No heap allocation
-/// - Format: `[bytes 0-14][length | tag bits]`
+/// - Format: [bytes 0-14][length | tag bits]
 ///
 /// **Heap String (> 15 bytes)**:
-/// - Stored in arena-allocated [`HeapString`]
+/// - Stored in arena-allocated [``HeapString``]
 /// - Pointer in `data.ptr` with encoding in bit 1
 /// - Reference counted for copy-on-write
 ///
@@ -123,10 +130,11 @@ impl Clone for RuntimeString {
             }
         } else {
             // Heap strings: increment reference count
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
 
             // Increment refcount
             // SAFETY: Using atomic fetch_add with AcqRel ordering
@@ -134,11 +142,12 @@ impl Clone for RuntimeString {
                 let old_count =
                     (*heap_ptr).refcount.fetch_add(1, Ordering::AcqRel);
                 // Check for overflow
-                if old_count == u32::MAX {
-                    // Panic on overflow - this is a programming error
-                    // (creating more than 4 billion references to the same string)
-                    panic!("Reference count overflow in RuntimeString::clone");
-                }
+                // Panic on overflow - this is a programming error
+                // (creating more than 4 billion references to the same string)
+                assert!(
+                    old_count != u32::MAX,
+                    "Reference count overflow in `RuntimeString`::clone"
+                );
             }
 
             // Return copy with same tagged pointer
@@ -151,10 +160,11 @@ impl Drop for RuntimeString {
     fn drop(&mut self) {
         if !self.is_inline() {
             // Heap strings: decrement reference count
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
 
             // Decrement refcount
             // Note: We don't deallocate because the arena owns the memory
@@ -170,7 +180,7 @@ impl Drop for RuntimeString {
 
 /// Internal representation for heap-allocated strings.
 ///
-/// `HeapString` is stored in the arena with 16-byte alignment.
+/// ``HeapString`` is stored in the arena with 16-byte alignment.
 /// It contains metadata followed by flexible array storage for the string data.
 #[repr(C, align(16))]
 struct HeapString {
@@ -182,7 +192,7 @@ struct HeapString {
     refcount: AtomicU32,
     /// Capacity in bytes (including space for NUL terminator).
     capacity: u32,
-    /// Flags: bit 0 = encoding (0=UTF-8, 1=Latin-1), bit 1 = is_interned.
+    /// Flags: bit 0 = encoding (0=UTF-8, 1=Latin-1), bit 1 = `is_interned`.
     flags: AtomicU8,
     /// String data starts here (flexible array member).
     /// The actual string bytes follow, NUL-terminated.
@@ -208,20 +218,20 @@ struct HeapString {
 struct StringInternCache {
     /// Hash map of interned strings.
     /// Key: precomputed hash (u64)
-    /// Value: list of HeapString pointers with that hash (for collision resolution)
+    /// Value: list of `HeapString` pointers with that hash (for collision resolution)
     cache: RwLock<HashMap<u64, Vec<*const HeapString>>>,
-    /// Arena used for allocating interned strings
+    /// `Arena` used for allocating interned strings
     arena: &'static crate::runtime::Arena,
 }
 
 // SAFETY: StringInternCache is Send because:
-// - HeapString pointers point to arena memory (never deallocated, valid for entire program)
+// - `HeapString` pointers point to arena memory (never deallocated, valid for entire program)
 // - RwLock is Send
-// - Arena is thread-safe
+// - `Arena` is thread-safe
 unsafe impl Send for StringInternCache {}
 
 // SAFETY: StringInternCache is Sync because:
-// - HeapString pointers are arena-allocated (immutable data, atomic refcount)
+// - `HeapString` pointers are arena-allocated (immutable data, atomic refcount)
 // - RwLock provides synchronized access
 // - Multiple threads can safely read the cache concurrently
 unsafe impl Sync for StringInternCache {}
@@ -263,7 +273,7 @@ impl StringInternCache {
             if let Some(entry) = cache.get(&hash) {
                 // Search bucket for matching string
                 for &ptr in entry {
-                    // SAFETY: ptr points to valid HeapString in arena
+                    // SAFETY: ptr points to valid `HeapString` in arena
                     if unsafe { Self::bytes_match(ptr, bytes) } {
                         // Found! Return existing string (increment refcount)
                         return unsafe { RuntimeString::from_heap_ptr(ptr) };
@@ -278,7 +288,7 @@ impl StringInternCache {
         // Only cache heap-allocated strings
         if let Ok(heap_ptr) = rs.heap_ptr() {
             let mut cache = self.cache.write().unwrap();
-            cache.entry(hash).or_insert_with(Vec::new).push(heap_ptr);
+            cache.entry(hash).or_default().push(heap_ptr);
         }
 
         rs
@@ -295,15 +305,17 @@ impl StringInternCache {
         hasher.finish()
     }
 
-    /// Checks if a HeapString matches the given byte slice.
+    /// Checks if a `HeapString` matches the given byte slice.
     ///
     /// # Safety
     ///
-    /// Caller must ensure ptr points to a valid HeapString.
+    /// Caller must ensure ptr points to a valid `HeapString`.
     unsafe fn bytes_match(ptr: *const HeapString, bytes: &[u8]) -> bool {
-        // SAFETY: ptr is valid pointer to HeapString in arena
-        let heap = unsafe { &*ptr };
-        let len = heap.length.load(Ordering::Acquire) as usize;
+        // Load length without creating a reference to the entire HeapString
+        // SAFETY: ptr is valid pointer to `HeapString` in arena.
+        // We use addr_of! to get pointers to individual fields without creating references.
+        let len_ptr = unsafe { std::ptr::addr_of!((*ptr).length) };
+        let len = unsafe { (*len_ptr).load(Ordering::Acquire) as usize };
 
         // Fast-fail: length check
         if len != bytes.len() {
@@ -311,15 +323,18 @@ impl StringInternCache {
         }
 
         // Compare bytes
-        // SAFETY: data_ptr points to valid string data in arena
-        let data_ptr = heap.data.as_ptr();
+        // SAFETY: Calculate offset to data field directly without creating intermediate references.
+        // HeapString is repr(C) with layout: length, hash, refcount, capacity, flags, data
+        // offset_of(HeapString, data) gives us the byte offset of the data field.
+        let data_offset = std::mem::offset_of!(HeapString, data);
+        let data_ptr = unsafe { (ptr as *const u8).add(data_offset) };
         let heap_bytes = unsafe { std::slice::from_raw_parts(data_ptr, len) };
         heap_bytes == bytes
     }
 }
 
 impl RuntimeString {
-    /// Creates a new RuntimeString from a string slice.
+    /// Creates a new `RuntimeString` from a string slice.
     ///
     /// # Arguments
     ///
@@ -328,7 +343,7 @@ impl RuntimeString {
     ///
     /// # Returns
     ///
-    /// A new RuntimeString instance
+    /// A new `RuntimeString` instance
     ///
     /// # Performance
     ///
@@ -401,6 +416,7 @@ impl RuntimeString {
     /// * `is_latin1` - Whether the string is Latin-1/ASCII only
     /// * `arena` - The arena to allocate from
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     fn new_heap(
         s: &str,
         is_latin1: bool,
@@ -415,7 +431,7 @@ impl RuntimeString {
         // Calculate capacity (power of 2, at least len + 1 for NUL terminator)
         let capacity = (len + 1).next_power_of_two();
 
-        // Create HeapString header
+        // Create `HeapString` header
         let heap_str = HeapString {
             length: AtomicU32::new(len as u32),
             hash: AtomicU64::new(hash),
@@ -434,26 +450,42 @@ impl RuntimeString {
 
         // Copy string data
         // SAFETY: ptr is valid and points to allocated memory in arena
+        // We use addr_of_mut! to get a mutable pointer to the data field
+        // without creating an intermediate reference that would violate Stacked Borrows.
         unsafe {
-            let data_ptr = (*ptr).data.as_ptr() as *mut u8;
+            let data_ptr = std::ptr::addr_of_mut!((*ptr).data).cast::<u8>();
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), data_ptr, len);
             *data_ptr.add(len) = 0; // NUL terminator
         }
 
         // Tag pointer with encoding
+        // SAFETY: We use strict provenance API to properly handle pointer tagging.
+        // The map_addr method allows us to modify the address while preserving provenance.
+        // We set the ENCODING_BIT (bit 1) to indicate Latin-1 encoding.
+        // The cast from *mut HeapString to *mut u8 is safe because:
+        // 1. We're just doing pointer tagging (storing metadata in unused bits)
+        // 2. We'll reconstruct the proper pointer type when needed
         let tagged_ptr = if is_latin1 {
-            (ptr as usize | ENCODING_BIT) as *mut u8
+            // Use map_addr to set the encoding bit while preserving provenance
+            ptr.map_addr(|addr| addr | ENCODING_BIT) as *mut u8
         } else {
             ptr as *mut u8
         };
 
         // SAFETY: tagged_ptr is a valid pointer from arena allocation
+        // IMPORTANT: We must initialize ALL 16 bytes of the union to avoid
+        // is_inline() reading uninitialized memory (byte 15)
         unsafe {
-            RuntimeString {
-                data: RuntimeStringData {
-                    ptr: NonNull::new_unchecked(tagged_ptr),
-                },
-            }
+            let mut data = RuntimeStringData {
+                ptr: NonNull::new_unchecked(tagged_ptr),
+            };
+            // Zero out the upper 8 bytes of the union to ensure is_inline()
+            // doesn't read uninitialized memory when checking byte 15
+            // SAFETY: data.inline[8..16] is part of the union, safe to write
+            // We write zeros to bytes 8-15 (the padding beyond the 8-byte pointer)
+            // This ensures is_inline() always sees a valid value in byte 15
+            data.inline[8..16].fill(0);
+            RuntimeString { data }
         }
     }
 
@@ -494,6 +526,8 @@ impl RuntimeString {
     ///
     /// `true` if the string uses inline storage, `false` if heap-allocated
     #[inline]
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn is_inline(&self) -> bool {
         // Check LSB of inline array (last byte, bit 0)
         (unsafe { self.data.inline[15] } & SSO_TAG_BIT as u8) != 0
@@ -505,6 +539,8 @@ impl RuntimeString {
     ///
     /// `true` if Latin-1/ASCII, `false` if UTF-8
     #[inline]
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn is_latin1(&self) -> bool {
         // Check bit 1 of inline array (last byte, bit 1) or heap pointer
         if self.is_inline() {
@@ -534,24 +570,27 @@ impl RuntimeString {
 
     /// Returns the length of the string in bytes.
     #[inline]
+    #[must_use]
     pub fn len(&self) -> usize {
         if self.is_inline() {
             // Extract length from inline storage (bits 2-7 of byte 15)
             // Length is stored in bits 2-7, so shift right by 2
             ((unsafe { self.data.inline[15] } as usize) >> 2) & 0x3F
         } else {
-            // Get length from HeapString
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            // HeapString is in arena memory, which is never deallocated
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // Get length from `HeapString`
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // `HeapString` is in arena memory, which is never deallocated.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
             unsafe { (*heap_ptr).length.load(Ordering::Acquire) as usize }
         }
     }
 
     /// Checks if the string is empty.
     #[inline]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -560,40 +599,42 @@ impl RuntimeString {
     ///
     /// # Returns
     ///
-    /// - `Ok(*const HeapString)` - Pointer to HeapString if heap-allocated
+    /// - `Ok(*const HeapString)` - Pointer to `HeapString` if heap-allocated
     /// - `Err(())` - If this is an inline SSO string
     #[inline]
     fn heap_ptr(&self) -> Result<*const HeapString> {
         if self.is_inline() {
             Err(crate::error::Error::InvalidArenaState)
         } else {
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
             Ok(heap_ptr)
         }
     }
 
-    /// Creates a RuntimeString from an existing HeapString pointer.
+    /// Creates a `RuntimeString` from an existing `HeapString` pointer.
     ///
-    /// This increments the reference count of the HeapString.
+    /// This increments the reference count of the `HeapString`.
     ///
     /// # Safety
     ///
-    /// Caller must ensure ptr points to a valid HeapString in the arena.
+    /// Caller must ensure ptr points to a valid `HeapString` in the arena.
     #[inline]
     unsafe fn from_heap_ptr(ptr: *const HeapString) -> RuntimeString {
         // Increment refcount
-        // SAFETY: ptr points to valid HeapString in arena
+        // SAFETY: ptr points to valid `HeapString` in arena
         unsafe {
             (*ptr).refcount.fetch_add(1, Ordering::AcqRel);
         }
 
         // Get encoding from flags
-        // SAFETY: ptr points to valid HeapString
+        // SAFETY: ptr points to valid `HeapString`
         let encoding_bit = unsafe {
-            if (*ptr).flags.load(Ordering::Acquire) & FLAG_ENCODING_LATIN1 != 0 {
+            if (*ptr).flags.load(Ordering::Acquire) & FLAG_ENCODING_LATIN1 != 0
+            {
                 ENCODING_BIT
             } else {
                 0
@@ -601,42 +642,61 @@ impl RuntimeString {
         };
 
         // Tag pointer with encoding
-        let tagged_ptr = (ptr as usize | encoding_bit) as *mut u8;
+        // SAFETY: We use strict provenance API to properly handle pointer tagging.
+        // The map_addr method allows us to modify the address while preserving provenance.
+        // We set the encoding bit to indicate Latin-1 or UTF-8 encoding.
+        // The cast from *mut HeapString to *mut u8 is safe because:
+        // 1. We're just doing pointer tagging (storing metadata in unused bits)
+        // 2. We'll reconstruct the proper pointer type when needed
+        let tagged_ptr = ptr.map_addr(|addr| addr | encoding_bit) as *mut u8;
 
         // SAFETY: tagged_ptr is valid non-null pointer
+        // IMPORTANT: We must initialize ALL 16 bytes of the union to avoid
+        // is_inline() reading uninitialized memory (byte 15)
         unsafe {
-            RuntimeString {
-                data: RuntimeStringData {
-                    ptr: NonNull::new_unchecked(tagged_ptr),
-                },
-            }
+            let mut data = RuntimeStringData {
+                ptr: NonNull::new_unchecked(tagged_ptr),
+            };
+            // Zero out the upper 8 bytes of the union to ensure is_inline()
+            // doesn't read uninitialized memory when checking byte 15
+            // SAFETY: data.inline[8..16] is part of the union, safe to write
+            data.inline[8..16].fill(0);
+            RuntimeString { data }
         }
     }
 
     /// Returns the string as a byte slice.
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         if self.is_inline() {
             self.inline_bytes()
         } else {
-            // Get data from HeapString
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            // HeapString is in arena memory, which is never deallocated
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // Get data from `HeapString`
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // `HeapString` is in arena memory, which is never deallocated.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
             let len =
                 unsafe { (*heap_ptr).length.load(Ordering::Acquire) as usize };
 
-            // SAFETY: data array points to valid string bytes
-            // The data is NUL-terminated and len specifies the valid range
+            // SAFETY: data array points to valid string bytes.
+            // The data is NUL-terminated and len specifies the valid range.
+            // We use addr_of! to get a pointer without creating an intermediate reference,
+            // which would violate Stacked Borrows.
             unsafe {
-                let data_ptr = (*heap_ptr).data.as_ptr();
+                let data_ptr = std::ptr::addr_of!((*heap_ptr).data).cast::<u8>();
                 std::slice::from_raw_parts(data_ptr, len)
             }
         }
     }
 
     /// Returns the string as a `str`, validating UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidArenaState`] if the string data is invalid UTF-8.
     pub fn as_str(&self) -> Result<&str> {
         // TODO: Implement in Step 4
         std::str::from_utf8(self.as_bytes())
@@ -668,6 +728,7 @@ impl RuntimeString {
     /// // Long strings use heap allocation
     /// assert!(!rs1.is_inline());
     /// ```
+    #[must_use]
     pub fn intern(s: &str) -> Self {
         get_intern_cache().intern(s)
     }
@@ -684,7 +745,7 @@ impl fmt::Display for RuntimeString {
 
 impl fmt::Debug for RuntimeString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RuntimeString")
+        f.debug_struct("`RuntimeString`")
             .field("is_inline", &self.is_inline())
             .field("is_latin1", &self.is_latin1())
             .field("len", &self.len())
@@ -699,10 +760,10 @@ impl PartialEq for RuntimeString {
             unsafe { self.data.inline == other.data.inline }
         } else if !self.is_inline() && !other.is_inline() {
             // Fast path 2: Both heap, check pointer equality first
-            let ptr1 =
-                unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK };
-            let ptr2 =
-                unsafe { other.data.ptr.as_ptr() as usize & POINTER_MASK };
+            // SAFETY: We use map_addr to mask off the tag bits while preserving provenance,
+            // then get the address for comparison.
+            let ptr1 = unsafe { self.data.ptr.as_ptr().addr() & POINTER_MASK };
+            let ptr2 = unsafe { other.data.ptr.as_ptr().addr() & POINTER_MASK };
 
             if ptr1 == ptr2 {
                 return true; // Same heap allocation
@@ -733,11 +794,12 @@ impl Hash for RuntimeString {
             let len = self.len();
             unsafe { self.data.inline[..len].hash(state) };
         } else {
-            // Use cached hash from HeapString
-            // SAFETY: Clear tag bits to get actual HeapString pointer
-            let heap_ptr =
-                (unsafe { self.data.ptr.as_ptr() as usize & POINTER_MASK })
-                    as *const HeapString;
+            // Use cached hash from `HeapString`
+            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
+            // We use map_addr to mask off the tag bits while preserving provenance.
+            let heap_ptr = unsafe {
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            };
             let hash = unsafe { (*heap_ptr).hash.load(Ordering::Acquire) };
             hash.hash(state);
         }
@@ -764,11 +826,13 @@ fn get_intern_cache() -> &'static StringInternCache {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use super::*;
 
     #[test]
     fn test_runtime_string_size() {
-        // RuntimeString contains a union with a 16-byte array
+        // `RuntimeString` contains a union with a 16-byte array
         // So it must be 16 bytes
         assert_eq!(std::mem::size_of::<RuntimeString>(), 16);
     }
@@ -922,8 +986,9 @@ mod tests {
         );
 
         // Get initial refcount
+        // SAFETY: We use map_addr to mask off the tag bits while preserving provenance.
         let heap_ptr1 = unsafe {
-            (rs1.data.ptr.as_ptr() as usize & POINTER_MASK) as *const HeapString
+            rs1.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
         };
         let initial_count =
             unsafe { (*heap_ptr1).refcount.load(Ordering::Acquire) };
@@ -1025,8 +1090,8 @@ mod tests {
     #[test]
     fn test_intern_same_string_returns_same_pointer() {
         // Intern the same string twice (long enough to bypass SSO)
-        let rs1 = RuntimeString::intern("initWithObjects:andKeys:");
-        let rs2 = RuntimeString::intern("initWithObjects:andKeys:");
+        let rs1 = RuntimeString::intern("initWith`Object`s:andKeys:");
+        let rs2 = RuntimeString::intern("initWith`Object`s:andKeys:");
 
         // Should both be heap-allocated (not inline)
         assert!(!rs1.is_inline());
@@ -1071,7 +1136,8 @@ mod tests {
 
     #[test]
     fn test_intern_refcount_increments() {
-        let rs1 = RuntimeString::intern("sharedSelector:withMultipleArguments:");
+        let rs1 =
+            RuntimeString::intern("shared`Selector`:withMultipleArguments:");
         let ptr1 = rs1.heap_ptr().unwrap();
 
         // Initial refcount should be 1
@@ -1079,8 +1145,10 @@ mod tests {
         assert_eq!(initial_count, 1);
 
         // Intern again should increment refcount
-        let rs2 = RuntimeString::intern("sharedSelector:withMultipleArguments:");
-        let count_after_intern = unsafe { (*ptr1).refcount.load(Ordering::Acquire) };
+        let rs2 =
+            RuntimeString::intern("shared`Selector`:withMultipleArguments:");
+        let count_after_intern =
+            unsafe { (*ptr1).refcount.load(Ordering::Acquire) };
         assert_eq!(count_after_intern, 2);
 
         // Content should match

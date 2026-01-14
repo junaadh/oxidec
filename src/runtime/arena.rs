@@ -1,8 +1,11 @@
-//! Arena allocator for OxideC runtime.
+//! `Arena` allocator for `OxideC` runtime.
 //!
 //! This module implements a high-performance arena allocator designed for
 //! allocating long-lived runtime metadata such as selectors, classes, and
 //! protocols. The arena provides:
+
+// Allow precision loss in statistics calculations - acceptable for reporting purposes
+#![allow(clippy::cast_precision_loss)]
 //!
 //! - **Thread-safe allocation** via atomic operations
 //! - **Sub-microsecond allocation** through bump pointer strategy
@@ -64,9 +67,9 @@
 //!
 //! Allocation performance characteristics:
 //!
-//! - **Arena allocation**: ~13-15 ns (with atomic operations)
-//! - **LocalArena allocation**: ~2-3 ns (no atomics, thread-local)
-//! - **Chunk growth**: Amortized O(1) as chunks double in size
+//! - **`Arena` allocation**: ~13-15 ns (with atomic operations)
+//! - **`LocalArena` allocation**: ~2-3 ns (no atomics, thread-local)
+//! - **`Chunk` growth**: Amortized O(1) as chunks double in size
 //!
 //! # Memory Overhead
 //!
@@ -78,12 +81,12 @@ use crate::error::{Error, Result};
 use std::alloc::{self, Layout};
 use std::ptr::NonNull;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 /// Default alignment for arena allocations (16 bytes).
 ///
 /// This ensures proper alignment for:
-/// - Atomic operations (AtomicU32 at 4-byte, AtomicU64 at 8-byte)
+/// - Atomic operations (`AtomicU32` at 4-byte, `AtomicU64` at 8-byte)
 /// - SIMD operations (16-byte alignment)
 /// - General purpose cache line optimization
 const DEFAULT_ALIGNMENT: usize = 16;
@@ -96,7 +99,7 @@ const MAX_CHUNK_SIZE: usize = 1024 * 1024;
 
 /// A fixed-size memory chunk with bump allocation.
 ///
-/// Chunks are allocated from the system allocator using `std::alloc` and
+/// `Chunk`s are allocated from the system allocator using `std::alloc` and
 /// provide bump pointer allocation for fast, contiguous memory allocation.
 ///
 /// # Thread Safety
@@ -106,14 +109,15 @@ const MAX_CHUNK_SIZE: usize = 1024 * 1024;
 ///
 /// # Safety
 ///
-/// - Chunk memory is never deallocated until the Chunk is dropped
+/// - `Chunk` memory is never deallocated until the `Chunk` is dropped
 /// - All allocations are properly aligned
 /// - Bump pointer always advances and never wraps around
 pub struct Chunk {
     /// Start of the chunk's memory region.
     start: NonNull<u8>,
     /// Current bump pointer (atomic for thread safety).
-    ptr: AtomicUsize,
+    /// We use AtomicPtr<u8> to maintain proper provenance.
+    ptr: AtomicPtr<u8>,
     /// End of the chunk's memory region (exclusive).
     end: NonNull<u8>,
     /// Total capacity of the chunk in bytes.
@@ -134,9 +138,18 @@ impl Chunk {
     ///
     /// # Safety
     ///
-    /// - The chunk is allocated with proper alignment (DEFAULT_ALIGNMENT)
-    /// - The memory is valid for the lifetime of the Chunk
-    /// - All pointers derived from this chunk are valid until the Chunk is dropped
+    /// - The chunk is allocated with proper alignment (`DEFAULT_ALIGNMENT`)
+    /// - The memory is valid for the lifetime of the `Chunk`
+    /// - All pointers derived from this chunk are valid until the `Chunk` is dropped
+    ///
+    /// # Panics
+    ///
+    /// - Panics if the `Chunk::end` end pointer is null
+    ///
+    /// # Errors
+    ///
+    /// - Returns `Err(Error::ChunkAllocationFailed` when the size is less than `MIN_CHUNK_SIZE`
+    /// - Returns `Err(Error::InvalidAlignment` when the size is not a power of two or is not a multiple of `DEFAULT_ALIGNMENT`
     pub fn new(size: usize) -> Result<Self> {
         if size < MIN_CHUNK_SIZE {
             return Err(Error::ChunkAllocationFailed { size });
@@ -149,7 +162,7 @@ impl Chunk {
         }
 
         // SAFETY: We're creating a layout with size and alignment.
-        // Both size and DEFAULT_ALIGNMENT (16) are valid (non-zero, power of two).
+        // Both size and `DEFAULT_ALIGNMENT` (16) are valid (non-zero, power of two).
         let layout = unsafe {
             Layout::from_size_align_unchecked(size, DEFAULT_ALIGNMENT)
         };
@@ -170,7 +183,9 @@ impl Chunk {
 
         Ok(Chunk {
             start,
-            ptr: AtomicUsize::new(start.as_ptr() as usize),
+            // SAFETY: Initialize AtomicPtr with the start pointer.
+            // This maintains proper provenance throughout the chunk's lifetime.
+            ptr: AtomicPtr::new(start.as_ptr()),
             end,
             capacity: size,
         })
@@ -196,15 +211,18 @@ impl Chunk {
     #[must_use]
     pub fn try_alloc(&self, size: usize, align: usize) -> Option<NonNull<u8>> {
         loop {
-            // Load current bump pointer
-            let current_addr = self.ptr.load(Ordering::Acquire);
+            // Load current bump pointer as a raw pointer
+            let current_ptr = self.ptr.load(Ordering::Acquire);
+
+            // Get the address for arithmetic
+            let current_addr = current_ptr.addr();
 
             // Calculate aligned offset
             let aligned_offset = Self::round_up_to_align(current_addr, align);
             let alloc_size = Self::round_up_to_align(size, align);
 
             // Check if we have enough space
-            let end_addr = self.end.as_ptr() as usize;
+            let end_addr = self.end.addr().get();
             if aligned_offset.wrapping_add(alloc_size) > end_addr {
                 return None;
             }
@@ -212,25 +230,33 @@ impl Chunk {
             // Try to claim this space atomically
             let new_addr = aligned_offset.wrapping_add(alloc_size);
 
-            // SAFETY: ptr is an AtomicUsize that we're performing a CAS operation on.
+            // We reconstruct the pointer with the new address using with_addr.
+            // This preserves the provenance of the original pointer while updating the address.
+            // The new address is within the same allocated object (checked above).
+            // with_addr is a safe method that maintains provenance.
+            let new_ptr = current_ptr.with_addr(new_addr);
+
+            // SAFETY: ptr is an AtomicPtr<u8> that we're performing a CAS operation on.
             // The ordering (Acquire/Release) ensures proper synchronization.
             // We use compare_exchange_weak which is more efficient in loops.
-            match self.ptr.compare_exchange_weak(
-                current_addr,
-                new_addr,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    // Successfully claimed the space
-                    // SAFETY: aligned_offset is within the chunk bounds (checked above)
-                    // and is properly aligned by construction.
-                    return unsafe { Some(NonNull::new_unchecked(aligned_offset as *mut u8)) };
-                }
-                Err(_) => {
-                    // Another thread allocated first, retry
-                    continue;
-                }
+            if self
+                .ptr
+                .compare_exchange_weak(
+                    current_ptr,
+                    new_ptr,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                // Successfully claimed the space
+                // SAFETY: aligned_offset is within the chunk bounds (checked above)
+                // and is properly aligned by construction.
+                // We reconstruct the pointer using with_addr to preserve provenance.
+                // with_addr is safe, but new_unchecked requires unsafe because we're
+                // guaranteeing the pointer is non-null (which it is, as it's within the chunk).
+                let result_ptr = current_ptr.with_addr(aligned_offset);
+                return unsafe { Some(NonNull::new_unchecked(result_ptr)) };
             }
         }
     }
@@ -238,9 +264,10 @@ impl Chunk {
     /// Returns the remaining capacity in this chunk.
     #[must_use]
     pub fn remaining(&self) -> usize {
-        let current = self.ptr.load(Ordering::Acquire);
-        let end = self.end.as_ptr() as usize;
-        end.saturating_sub(current)
+        let current_ptr = self.ptr.load(Ordering::Acquire);
+        let current_addr = current_ptr.addr();
+        let end = self.end.addr().get();
+        end.saturating_sub(current_addr)
     }
 
     /// Rounds up a value to the next multiple of alignment.
@@ -266,7 +293,7 @@ impl Chunk {
 impl Drop for Chunk {
     fn drop(&mut self) {
         // SAFETY: Deallocating the chunk's memory.
-        // The layout matches what was used in Chunk::new.
+        // The layout matches what was used in `Chunk`::new.
         let layout = unsafe {
             Layout::from_size_align_unchecked(self.capacity, DEFAULT_ALIGNMENT)
         };
@@ -278,24 +305,24 @@ impl Drop for Chunk {
 }
 
 // SAFETY: Chunk uses atomic operations for thread safety.
-// It's safe to share a Chunk between threads.
+// It's safe to share a `Chunk` between threads.
 unsafe impl Send for Chunk {}
 unsafe impl Sync for Chunk {}
 
 /// Thread-safe arena allocator for long-lived runtime metadata.
 ///
-/// The `Arena` provides fast, thread-safe allocation through a bump-pointer
+/// The ``Arena`` provides fast, thread-safe allocation through a bump-pointer
 /// strategy. It's designed for allocating metadata that lives for the entire
 /// program duration, such as:
 ///
-/// - Selectors (method names)
-/// - Class definitions and method tables
+/// - `Selector`s (method names)
+/// - `Class` definitions and method tables
 /// - Protocol definitions
 /// - Runtime caches
 ///
 /// # Thread Safety
 ///
-/// The `Arena` uses atomic operations for the bump pointer, making it safe
+/// The ``Arena`` uses atomic operations for the bump pointer, making it safe
 /// to allocate from multiple threads concurrently without external synchronization.
 ///
 /// # Performance
@@ -351,6 +378,11 @@ impl Arena {
     ///
     /// let arena = Arena::new(4096); // 4 KiB initial chunk
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the initial chunk allocation fails (e.g., out of memory).
+    #[must_use]
     pub fn new(initial_size: usize) -> Self {
         let size = initial_size.max(MIN_CHUNK_SIZE);
         let size = size.next_power_of_two();
@@ -362,7 +394,7 @@ impl Arena {
         let chunk_ptr = Box::leak(Box::new(first_chunk));
 
         Arena {
-            chunks: Mutex::new(vec![]), // Chunks managed separately
+            chunks: Mutex::new(vec![]), // `Chunk`s managed separately
             current_chunk: AtomicPtr::new(chunk_ptr),
             alignment: DEFAULT_ALIGNMENT,
         }
@@ -374,6 +406,12 @@ impl Arena {
     ///
     /// * `initial_size` - The size of the initial chunk in bytes.
     /// * `alignment` - The minimum alignment for allocations (must be a power of two).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `alignment` is not a power of two, or if the initial chunk
+    /// allocation fails.
+    #[must_use]
     pub fn with_config(initial_size: usize, alignment: usize) -> Self {
         assert!(
             alignment.is_power_of_two(),
@@ -428,6 +466,11 @@ impl Arena {
     ///     assert_eq!(*ptr, 42);
     /// }
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocation fails (e.g., out of memory and unable to
+    /// allocate additional chunks).
     pub fn alloc<T>(&self, value: T) -> *mut T {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>().max(self.alignment);
@@ -437,7 +480,7 @@ impl Arena {
             // Load current chunk pointer (Acquire ordering ensures we see the latest chunk)
             let chunk_ptr = self.current_chunk.load(Ordering::Acquire);
 
-            // SAFETY: chunk_ptr is a valid pointer to a Chunk that lives for 'static
+            // SAFETY: chunk_ptr is a valid pointer to a `Chunk` that lives for 'static
             // (leaked box), so dereferencing it here is safe.
             let chunk = unsafe { &*chunk_ptr };
 
@@ -449,8 +492,8 @@ impl Arena {
                 // 3. Memory is uninitialized and writable
                 // 4. size matches sizeof(T) exactly
                 unsafe {
-                    std::ptr::write(ptr.as_ptr() as *mut T, value);
-                    return ptr.as_ptr() as *mut T;
+                    std::ptr::write(ptr.as_ptr().cast::<T>(), value);
+                    return ptr.as_ptr().cast::<T>();
                 }
             }
 
@@ -460,7 +503,7 @@ impl Arena {
             }
 
             // Out of memory
-            panic!("Arena allocation failed: out of memory");
+            panic!("`Arena` allocation failed: out of memory");
         }
     }
 
@@ -498,23 +541,19 @@ impl Arena {
     ///
     /// # Arguments
     ///
-    /// * `heap_str` - The HeapString header to allocate
+    /// * `heap_str` - The `HeapString` header to allocate
     /// * `capacity` - The total capacity including string data
     ///
     /// # Returns
     ///
-    /// Pointer to the allocated HeapString
+    /// Pointer to the allocated `HeapString`
     ///
     /// # Safety
     ///
     /// - Caller must ensure capacity is sufficient for string data
     /// - Returned pointer is valid for the arena's lifetime
     /// - String data must be copied immediately after allocation
-    pub fn alloc_string<T>(
-        &self,
-        heap_str: T,
-        capacity: usize,
-    ) -> *mut T {
+    pub fn alloc_string<T>(&self, heap_str: T, capacity: usize) -> *mut T {
         // Calculate total size including string data
         let header_size = std::mem::size_of::<T>();
         let total_size = header_size + capacity;
@@ -533,10 +572,10 @@ impl Arena {
         // - Memory is uninitialized and writable
         // - Layout matches T structure
         unsafe {
-            std::ptr::write(ptr as *mut T, heap_str);
+            std::ptr::write(ptr.cast::<T>(), heap_str);
         }
 
-        ptr as *mut T
+        ptr.cast::<T>()
     }
 
     /// Allocates with custom alignment (internal helper).
@@ -568,11 +607,16 @@ impl Arena {
                 continue;
             }
 
-            panic!("Arena allocation failed: out of memory");
+            panic!("`Arena` allocation failed: out of memory");
         }
     }
 
     /// Returns statistics about the arena's memory usage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned (which should never happen
+    /// under normal circumstances).
     #[must_use]
     pub fn stats(&self) -> ArenaStats {
         // Get current chunk
@@ -596,7 +640,9 @@ impl Arena {
         let total_used: usize = chunks
             .iter()
             .map(|c| c.capacity - c.remaining())
-            .chain(std::iter::once(current_chunk.capacity - current_chunk.remaining()))
+            .chain(std::iter::once(
+                current_chunk.capacity - current_chunk.remaining(),
+            ))
             .sum();
 
         ArenaStats {
@@ -642,9 +688,9 @@ pub struct ArenaStats {
     pub unused_ratio: f64,
 }
 
-// SAFETY: Arena uses atomic operations and Chunk is Sync, so Arena is thread-safe.
-unsafe impl Send for Arena {}
+// SAFETY: Arena uses atomic operations and `Chunk` is Sync, so `Arena` is thread-safe.
 unsafe impl Sync for Arena {}
+unsafe impl Send for Arena {}
 
 /// Thread-local arena for zero-contention allocation.
 ///
@@ -697,7 +743,8 @@ struct LocalChunk {
     /// Start of the chunk's memory region.
     start: NonNull<u8>,
     /// Current bump pointer (non-atomic).
-    ptr: usize,
+    /// We store as a raw pointer to maintain provenance.
+    ptr: *mut u8,
     /// End of the chunk's memory region (exclusive).
     end: NonNull<u8>,
     /// Total capacity of the chunk in bytes.
@@ -724,11 +771,13 @@ impl LocalChunk {
         // 3. We're creating a pointer to one past the end, which is valid for comparisons
         let end = start.as_ptr().wrapping_add(size);
         let end =
-            NonNull::new(end).expect("Chunk end pointer should not be null");
+            NonNull::new(end).expect("`Chunk` end pointer should not be null");
 
         Ok(LocalChunk {
             start,
-            ptr: start.as_ptr() as usize,
+            // SAFETY: Initialize ptr with the start pointer.
+            // This maintains proper provenance throughout the chunk's lifetime.
+            ptr: start.as_ptr(),
             end,
             capacity: size,
         })
@@ -737,21 +786,32 @@ impl LocalChunk {
     /// Allocates from this chunk (non-atomic).
     #[must_use]
     fn alloc(&mut self, size: usize, align: usize) -> Option<NonNull<u8>> {
-        let _current = self.ptr as *mut u8;
-        let current_addr = self.ptr;
+        // Get the current address from the pointer
+        let current_addr = self.ptr.addr();
 
         let aligned_offset = Chunk::round_up_to_align(current_addr, align);
         let offset = aligned_offset - current_addr;
         let _total_size = Chunk::round_up_to_align(size, align) + offset;
 
-        let end_addr = self.end.as_ptr() as usize;
+        let end_addr = self.end.addr().get();
         if aligned_offset + size > end_addr {
             return None;
         }
 
-        self.ptr = aligned_offset + Chunk::round_up_to_align(size, align);
+        // We reconstruct the pointer with the new address using with_addr.
+        // This preserves the provenance of the original pointer while updating the address.
+        // The new address is within the same allocated object (checked above).
+        // with_addr is a safe method that maintains provenance.
+        let new_addr = aligned_offset + Chunk::round_up_to_align(size, align);
+        self.ptr = self.ptr.with_addr(new_addr);
 
-        unsafe { Some(NonNull::new_unchecked(aligned_offset as *mut u8)) }
+        // SAFETY: aligned_offset is within the chunk bounds (checked above)
+        // and is properly aligned by construction.
+        // We reconstruct the pointer using with_addr to preserve provenance.
+        // with_addr is safe, but new_unchecked requires unsafe because we're
+        // guaranteeing the pointer is non-null (which it is, as it's within the chunk).
+        let result_ptr = self.ptr.with_addr(aligned_offset);
+        unsafe { Some(NonNull::new_unchecked(result_ptr)) }
     }
 }
 
@@ -769,6 +829,11 @@ impl Drop for LocalChunk {
 
 impl LocalArena {
     /// Creates a new local arena with the specified initial chunk size.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the initial chunk allocation fails (e.g., out of memory).
+    #[must_use]
     pub fn new(initial_size: usize) -> Self {
         let size = initial_size.max(MIN_CHUNK_SIZE);
         let size = size.next_power_of_two();
@@ -784,6 +849,11 @@ impl LocalArena {
     }
 
     /// Allocates a value in the local arena.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocation fails (e.g., out of memory and unable to
+    /// allocate additional chunks).
     pub fn alloc<T>(&mut self, value: T) -> *mut T {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>().max(self.alignment);
@@ -793,17 +863,14 @@ impl LocalArena {
                 && let Some(ptr) = chunk.alloc(size, align)
             {
                 unsafe {
-                    std::ptr::write(ptr.as_ptr() as *mut T, value);
-                    return ptr.as_ptr() as *mut T;
+                    std::ptr::write(ptr.as_ptr().cast::<T>(), value);
+                    return ptr.as_ptr().cast::<T>();
                 }
             }
 
             // Allocate new chunk
-            let last_size = self
-                .chunks
-                .last()
-                .map(|c| c.capacity)
-                .unwrap_or(MIN_CHUNK_SIZE);
+            let last_size =
+                self.chunks.last().map_or(MIN_CHUNK_SIZE, |c| c.capacity);
             let new_size = (last_size * 2).min(MAX_CHUNK_SIZE).max(size);
 
             let new_chunk = LocalChunk::new(new_size)
@@ -817,17 +884,13 @@ impl LocalArena {
     ///
     /// # Arguments
     ///
-    /// * `heap_str` - The HeapString header to allocate
+    /// * `heap_str` - The `HeapString` header to allocate
     /// * `capacity` - The total capacity including string data
     ///
     /// # Returns
     ///
-    /// Pointer to the allocated HeapString
-    pub fn alloc_string<T>(
-        &mut self,
-        heap_str: T,
-        capacity: usize,
-    ) -> *mut T {
+    /// Pointer to the allocated `HeapString`
+    pub fn alloc_string<T>(&mut self, heap_str: T, capacity: usize) -> *mut T {
         // Calculate total size including string data
         let header_size = std::mem::size_of::<T>();
         let total_size = header_size + capacity;
@@ -842,10 +905,10 @@ impl LocalArena {
 
         // SAFETY: Writing T to arena memory
         unsafe {
-            std::ptr::write(ptr as *mut T, heap_str);
+            std::ptr::write(ptr.cast::<T>(), heap_str);
         }
 
-        ptr as *mut T
+        ptr.cast::<T>()
     }
 
     /// Allocates with custom alignment (internal helper).
@@ -862,18 +925,15 @@ impl LocalArena {
         let align = layout.align();
 
         loop {
-            if let Some(chunk) = self.chunks.get_mut(self.current_chunk) {
-                if let Some(ptr) = chunk.alloc(size, align) {
-                    return ptr.as_ptr();
-                }
+            if let Some(chunk) = self.chunks.get_mut(self.current_chunk)
+                && let Some(ptr) = chunk.alloc(size, align)
+            {
+                return ptr.as_ptr();
             }
 
             // Allocate new chunk
-            let last_size = self
-                .chunks
-                .last()
-                .map(|c| c.capacity)
-                .unwrap_or(MIN_CHUNK_SIZE);
+            let last_size =
+                self.chunks.last().map_or(MIN_CHUNK_SIZE, |c| c.capacity);
             let new_size = (last_size * 2).min(MAX_CHUNK_SIZE).max(size);
 
             let new_chunk = LocalChunk::new(new_size)
@@ -893,7 +953,7 @@ impl LocalArena {
         let total_used: usize = self
             .chunks
             .iter()
-            .map(|c| c.ptr - c.start.as_ptr() as usize)
+            .map(|c| c.ptr.addr() - c.start.addr().get())
             .sum();
 
         ArenaStats {
@@ -923,7 +983,7 @@ mod tests {
     #[test]
     fn test_chunk_alignment() {
         let chunk = Chunk::new(4096).unwrap();
-        assert_eq!(chunk.start.as_ptr() as usize % DEFAULT_ALIGNMENT, 0);
+        assert_eq!(chunk.start.addr().get() % DEFAULT_ALIGNMENT, 0);
     }
 
     #[test]

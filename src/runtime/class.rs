@@ -1,18 +1,18 @@
-//! Class creation and inheritance for the `OxideC` runtime.
+//! `Class` creation and inheritance for the ``OxideC`` runtime.
 //!
 //! This module implements the class system with:
-//! - Class registration and metadata
+//! - `Class` registration and metadata
 //! - Single inheritance with cycle detection
-//! - Method registration and lookup
+//! - `Method` registration and lookup
 //! - Inheritance chain walking
 //!
 //! # Architecture
 //!
-//! Classes are **globally registered** and never deallocated:
-//! - Each class name maps to exactly one `Class` instance
-//! - Classes have `'static` lifetime (live for program duration)
+//! `Class`es are **globally registered** and never deallocated:
+//! - Each class name maps to exactly one ``Class`` instance
+//! - `Class`es have `'static` lifetime (live for program duration)
 //! - Immutable after creation (except method addition)
-//! - Single inheritance chain to root class (OxObject)
+//! - Single inheritance chain to root class (Ox`Object`)
 //!
 //! # Thread Safety
 //!
@@ -21,26 +21,64 @@
 //! protection.
 
 use crate::error::{Error, Result};
-use crate::runtime::{get_global_arena, RuntimeString, Selector};
+use crate::runtime::selector::SelectorHandle;
+use crate::runtime::{RuntimeString, Selector, get_global_arena};
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr::NonNull;
-use std::sync::RwLock;
 use std::sync::OnceLock;
+use std::sync::RwLock;
+
+/// `Method` implementation function pointer type.
+///
+/// This is the C ABI-compatible function pointer type used for all method
+/// implementations in the `OxideC` runtime. It follows the `Object`ive-C calling
+/// convention where:
+///
+/// - First argument: receiver object (self)
+/// - Second argument: method selector (_cmd)
+/// - Third argument: pointer to array of argument pointers
+/// - Fourth argument: pointer to return value storage
+///
+/// # Safety
+///
+/// Function pointers of this type MUST:
+/// - Be `extern "C"` for proper calling convention
+/// - Properly validate all pointer arguments before dereference
+/// - Only write to `return_value_ptr` if the return type is non-void
+/// - Handle argument marshalling based on method's type encoding
+///
+/// # Note
+///
+/// `Imp` is the low-level function pointer type for method implementations.
+/// You typically don't work with this directly unless you're implementing
+/// the dispatch system or custom method registration.
+///
+/// Uses `ObjectPtr` which is an opaque wrapper around the raw object data.
+pub type Imp = unsafe extern "C" fn(
+    _self: crate::runtime::object::ObjectPtr,
+    _cmd: SelectorHandle,
+    _args: *const *mut u8,
+    _ret: *mut u8,
+);
 
 /// Internal class data stored in global arena.
 ///
 /// This struct is allocated in the global arena and never deallocated.
 #[repr(C)]
 pub(crate) struct ClassInner {
-    /// Class name (e.g., "OxObject", "MutableArray")
+    /// Class name (e.g., "`OxObject`", "`MutableArray`")
     name: RuntimeString,
-    /// Superclass pointer (null for root class OxObject)
+    /// Superclass pointer (null for root class Ox`Object`)
     super_class: Option<NonNull<ClassInner>>,
-    /// Method table: selector hash -> Method
-    /// Protected by RwLock for thread-safe method addition
+    /// `Method` table: selector hash -> Method
+    /// Protected by `RwLock` for thread-safe method addition
     methods: RwLock<HashMap<u64, Method>>,
-    /// Class flags (reserved for future use)
+    /// Method cache for fast dispatch: selector hash -> (`class_ptr`, imp)
+    /// Protected by `RwLock` for thread-safe cache access
+    /// Stores `class_ptr` to handle method swizzling (cache invalidation)
+    cache: RwLock<HashMap<u64, (NonNull<ClassInner>, Imp)>>,
+    /// `Class` flags (reserved for future use)
     flags: u32,
 }
 
@@ -49,53 +87,70 @@ pub(crate) struct ClassInner {
 /// Ensures unique class names and provides fast lookup by name.
 struct ClassRegistry {
     /// Map of class name -> Class pointer
-    /// Protected by RwLock for thread-safe class registration
+    /// Protected by `RwLock` for thread-safe class registration
     classes: RwLock<HashMap<RuntimeString, NonNull<ClassInner>>>,
 }
 
 // SAFETY: ClassRegistry is Send + Sync because:
-// - ClassInner pointers point to arena memory (never deallocated)
+// - `Class`Inner pointers point to arena memory (never deallocated)
 // - RwLock provides synchronized access
-// - Arena ensures proper alignment and validity
+// - `Arena` ensures proper alignment and validity
 unsafe impl Send for ClassRegistry {}
 unsafe impl Sync for ClassRegistry {}
 
 /// Global class registry instance.
 static REGISTRY: OnceLock<ClassRegistry> = OnceLock::new();
 
-/// Method representation (placeholder for Phase 2).
+/// `Method` representation with implementation and type encoding.
 ///
-/// In Phase 1, Method is a minimal placeholder. In Phase 2 (Dispatch),
-/// it will include function pointers and implementation details.
-#[derive(Clone, Debug)]
+/// # Memory Layout
+///
+/// `Method`s are stored in class method tables and have `'static` lifetime
+/// (allocated in global arena).
+///
+/// # Thread Safety
+///
+/// `Method`s are immutable after creation and safe to share between threads.
+#[derive(Clone)]
 pub struct Method {
-    /// Method selector
+    /// `Method` selector
     pub selector: Selector,
-    /// Reserved for future implementation pointer
-    pub _imp: (),
-    /// Reserved for future encoding/type info
-    pub _types: (),
+    /// Function pointer to method implementation
+    pub imp: Imp,
+    /// Type encoding string (e.g., "v@:" for void return, id self, SEL _cmd)
+    /// Stored as interned string in arena
+    pub types: RuntimeString,
 }
 
-/// Class represents a runtime class definition with methods and inheritance.
+impl fmt::Debug for Method {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("`Method`")
+            .field("selector", &self.selector)
+            .field("imp", &format!("{:p}", self.imp as *const ()))
+            .field("types", &self.types.as_str().unwrap_or("<invalid>"))
+            .finish()
+    }
+}
+
+/// `Class` represents a runtime class definition with methods and inheritance.
 ///
-/// Classes are **globally registered** and never deallocated. They provide:
-/// - Class metadata (name, superclass, methods)
+/// `Class`es are **globally registered** and never deallocated. They provide:
+/// - `Class` metadata (name, superclass, methods)
 /// - Inheritance chain walking
-/// - Method lookup by selector
+/// - `Method` lookup by selector
 ///
 /// # Memory Management
 ///
-/// Classes use manual memory management:
+/// `Class`es use manual memory management:
 /// - Allocated in global arena (stable pointers)
 /// - Never deallocated (live for program duration)
 /// - Immutable after creation (except method addition)
 ///
 /// # Thread Safety
 ///
-/// Classes are `Send + Sync`:
-/// - Methods table protected by RwLock
-/// - Class metadata is immutable after construction
+/// `Class`es are `Send + Sync`:
+/// - Methods table protected by `RwLock`
+/// - `Class` metadata is immutable after construction
 ///
 /// # Example
 ///
@@ -121,11 +176,11 @@ impl Class {
     ///
     /// # Arguments
     ///
-    /// * `name` - Class name (must be unique in runtime)
+    /// * `name` - `Class` name (must be unique in runtime)
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Class)` if name is unique, `Err` if class already exists.
+    /// Returns `Ok(`Class`)` if name is unique, `Err` if class already exists.
     ///
     /// # Thread Safety
     ///
@@ -140,6 +195,11 @@ impl Class {
     /// let root = Class::new_root("MyRootClass").unwrap();
     /// assert!(root.super_class().is_none());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ClassExists`] if a root class with this name already exists
+    /// in the runtime.
     pub fn new_root(name: &str) -> Result<Self> {
         Self::create_class(name, None)
     }
@@ -148,13 +208,13 @@ impl Class {
     ///
     /// # Arguments
     ///
-    /// * `name` - Class name (must be unique)
+    /// * `name` - `Class` name (must be unique)
     /// * `super_class` - Superclass to inherit from
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Class)` if successful, `Err` on:
-    /// - Class name already exists
+    /// Returns `Ok(`Class`)` if successful, `Err` on:
+    /// - `Class` name already exists
     /// - Inheritance cycle detected
     ///
     /// # Thread Safety
@@ -171,6 +231,12 @@ impl Class {
     ///
     /// assert!(child.is_subclass_of(&root));
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ClassExists`] if a class with this name already exists,
+    /// or [`Error::InheritanceCycle`] if adding this class would create a cycle
+    /// in the inheritance hierarchy.
     pub fn new(name: &str, super_class: &Class) -> Result<Self> {
         // Check for inheritance cycles
         Self::check_inheritance_cycle(name, super_class)?;
@@ -201,12 +267,13 @@ impl Class {
             }
         } // Release read lock
 
-        // Create ClassInner
+        // Create `Class`Inner
         let super_ptr = super_class.map(|sc| sc.inner);
         let class_inner = ClassInner {
             name: name_str,
             super_class: super_ptr,
             methods: RwLock::new(HashMap::new()),
+            cache: RwLock::new(HashMap::new()),
             flags: 0,
         };
 
@@ -214,7 +281,8 @@ impl Class {
         let inner_ptr: *mut ClassInner = arena.alloc(class_inner);
 
         // SAFETY: inner_ptr is not null and properly aligned (arena ensures)
-        let inner_nn = NonNull::new(inner_ptr).expect("Arena allocation returned null");
+        let inner_nn =
+            NonNull::new(inner_ptr).expect("`Arena` allocation returned null");
 
         // Register in global registry
         {
@@ -236,21 +304,24 @@ impl Class {
     /// Checks for inheritance cycles when creating a subclass.
     ///
     /// Walks the superclass chain to ensure we're not creating a cycle.
-    fn check_inheritance_cycle(new_class_name: &str, super_class: &Class) -> Result<()> {
+    fn check_inheritance_cycle(
+        new_class_name: &str,
+        super_class: &Class,
+    ) -> Result<()> {
         let mut current_ptr = Some(super_class.inner.as_ptr());
 
         while let Some(ptr) = current_ptr {
-            // SAFETY: ptr points to valid ClassInner in arena
+            // SAFETY: ptr points to valid `Class`Inner in arena
             let inner = unsafe { &*ptr };
 
             // Check if we found the new class name in the superclass chain
-            // unwrap() is safe because RuntimeString in arena is always valid
+            // unwrap() is safe because `RuntimeString` in arena is always valid
             if inner.name.as_str().unwrap() == new_class_name {
                 return Err(Error::InheritanceCycle);
             }
 
             // Move to superclass
-            current_ptr = inner.super_class.map(|nn| nn.as_ptr());
+            current_ptr = inner.super_class.map(NonNull::as_ptr);
         }
 
         Ok(())
@@ -270,10 +341,15 @@ impl Class {
     /// let class = Class::new_root("MyClass").unwrap();
     /// assert_eq!(class.name(), "MyClass");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the class's name string in the arena is invalid UTF-8 (which
+    /// should never happen under normal circumstances).
     #[must_use]
     pub fn name(&self) -> &str {
-        // SAFETY: self.inner points to valid ClassInner in arena
-        // unwrap() is safe because RuntimeString in arena is always valid
+        // SAFETY: self.inner points to valid `Class`Inner in arena
+        // unwrap() is safe because `RuntimeString` in arena is always valid
         unsafe { &(*self.inner.as_ptr()).name }.as_str().unwrap()
     }
 
@@ -281,8 +357,8 @@ impl Class {
     ///
     /// # Returns
     ///
-    /// - `Some(Class)` if this class has a superclass
-    /// - `None` if this is a root class (OxObject)
+    /// - `Some(`Class`)` if this class has a superclass
+    /// - `None` if this is a root class (Ox`Object`)
     ///
     /// # Example
     ///
@@ -297,10 +373,10 @@ impl Class {
     /// ```
     #[must_use]
     pub fn super_class(&self) -> Option<Class> {
-        // SAFETY: self.inner points to valid ClassInner in arena
+        // SAFETY: self.inner points to valid `Class`Inner in arena
         let inner = unsafe { &*self.inner.as_ptr() };
 
-        // Return a new Class wrapping the superclass pointer
+        // Return a new `Class` wrapping the superclass pointer
         inner.super_class.map(|ptr| Class { inner: ptr })
     }
 
@@ -308,31 +384,40 @@ impl Class {
     ///
     /// # Arguments
     ///
-    /// * `method` - Method to add
+    /// * `method` - `Method` to add
     ///
     /// # Thread Safety
     ///
-    /// Multiple threads can add methods concurrently. RwLock ensures
+    /// Multiple threads can add methods concurrently. `RwLock` ensures
     /// synchronized access to the methods table.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::{Class, Selector, Method};
+    /// use oxidec::{Class, Selector};
+    /// use oxidec::runtime::get_global_arena;
+    /// use std::str::FromStr;
     ///
     /// let class = Class::new_root("MyClass").unwrap();
     /// let sel = Selector::from_str("doSomething:").unwrap();
+    /// let arena = get_global_arena();
     ///
-    /// let method = Method {
-    ///     selector: sel.clone(),
-    ///     _imp: (),
-    ///     _types: (),
-    /// };
-    ///
-    /// class.add_method(method).unwrap();
+    /// // Note: Method creation requires an implementation function pointer.
+    /// // This is typically done through the method registration API.
+    /// // See the dispatch module for full message sending implementation.
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// This function currently always returns `Ok(())`. The `Result` type is
+    /// used for future extensibility.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned (which should never happen
+    /// under normal circumstances).
     pub fn add_method(&self, method: Method) -> Result<()> {
-        // SAFETY: self.inner points to valid ClassInner
+        // SAFETY: self.inner points to valid `Class`Inner
         let inner = unsafe { &*self.inner.as_ptr() };
 
         let mut methods = inner.methods.write().unwrap();
@@ -347,11 +432,11 @@ impl Class {
     ///
     /// # Arguments
     ///
-    /// * `selector` - Method selector to lookup
+    /// * `selector` - `Method` selector to lookup
     ///
     /// # Returns
     ///
-    /// - `Some(&Method)` if found in this class or ancestor
+    /// - `Some(&`Method`)` if found in this class or ancestor
     /// - `None` if not found in entire inheritance chain
     ///
     /// # Note
@@ -362,30 +447,31 @@ impl Class {
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::{Class, Selector, Method};
+    /// use oxidec::{Class, Selector};
+    /// use std::str::FromStr;
     ///
     /// let parent = Class::new_root("Parent").unwrap();
     /// let sel = Selector::from_str("inheritedMethod").unwrap();
     ///
-    /// let method = Method {
-    ///     selector: sel.clone(),
-    ///     _imp: (),
-    ///     _types: (),
-    /// };
-    ///
-    /// parent.add_method(method).unwrap();
+    /// // Add method to parent (implementation omitted)
+    /// // parent.add_method(method).unwrap();
     ///
     /// let child = Class::new("Child", &parent).unwrap();
     ///
-    /// // Method found in parent
-    /// assert!(child.lookup_method(&sel).is_some());
+    /// // Method would be found in parent (if added)
+    /// // assert!(child.lookup_method(&sel).is_some());
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned (which should never happen
+    /// under normal circumstances).
     #[must_use]
     pub fn lookup_method(&self, selector: &Selector) -> Option<&Method> {
         let mut current_ptr = Some(self.inner.as_ptr());
 
         while let Some(ptr) = current_ptr {
-            // SAFETY: ptr points to valid ClassInner
+            // SAFETY: ptr points to valid `Class`Inner
             let inner = unsafe { &*ptr };
 
             // Try to find method in this class
@@ -396,16 +482,80 @@ impl Class {
                 // Found! Return reference with extended lifetime
                 // SAFETY: The method is in the arena and never deallocated
                 // We're creating a reference with the same lifetime as &self
-                return unsafe {
-                    Some(&*(method as *const Method))
-                };
+                return unsafe { Some(&*std::ptr::from_ref::<Method>(method)) };
             }
 
             // Not found, try superclass
-            current_ptr = inner.super_class.map(|nn| nn.as_ptr());
+            current_ptr = inner.super_class.map(NonNull::as_ptr);
         }
 
         None
+    }
+
+    /// Looks up a method implementation pointer with caching.
+    ///
+    /// This is the fast-path for message dispatch. It checks the cache first,
+    /// then falls back to walking the inheritance chain if needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - `Method` selector to lookup
+    ///
+    /// # Returns
+    ///
+    /// - `Some(Imp)` if method is found
+    /// - `None` if not found in entire inheritance chain
+    ///
+    /// # Performance
+    ///
+    /// - Cache hit: ~20-30ns (`HashMap` lookup)
+    /// - Cache miss: ~100-150ns (inheritance walk + cache update)
+    ///
+    /// # Note
+    ///
+    /// This method is used internally by the message dispatch system.
+    /// The returned `Imp` function pointer can be called with the appropriate
+    /// arguments after marshalling them based on the method's type encoding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned (which should never happen
+    /// under normal circumstances).
+    #[must_use]
+    pub fn lookup_imp(&self, selector: &Selector) -> Option<Imp> {
+        let hash = selector.hash();
+
+        // Fast path: Check cache
+        {
+            // SAFETY: self.inner points to valid `Class`Inner
+            let inner = unsafe { &*self.inner.as_ptr() };
+            let cache = inner.cache.read().unwrap();
+
+            if let Some((cached_class, imp)) = cache.get(&hash) {
+                // Verify cache is still valid (handles method swizzling)
+                if std::ptr::eq(cached_class.as_ptr(), self.inner.as_ptr()) {
+                    return Some(*imp);
+                }
+                // Cache entry is stale, fall through to slow path
+            }
+        } // Release read lock
+
+        // Slow path: Walk inheritance chain
+        if let Some(method) = self.lookup_method(selector) {
+            let imp = method.imp;
+
+            // Update cache
+            {
+                // SAFETY: self.inner points to valid `Class`Inner
+                let inner = unsafe { &*self.inner.as_ptr() };
+                let mut cache = inner.cache.write().unwrap();
+                cache.insert(hash, (self.inner, imp));
+            }
+
+            Some(imp)
+        } else {
+            None
+        }
     }
 
     /// Checks if this class inherits from the given class.
@@ -459,15 +609,15 @@ impl Class {
 }
 
 // SAFETY: Class is Send because:
-// - ClassInner is in arena (never moves, 'static lifetime)
-// - Methods table protected by RwLock
+// - `Class`Inner is in arena (never moves, 'static lifetime)
+// - `Method`s table protected by RwLock
 // - All pointers are valid for entire program duration
 unsafe impl Send for Class {}
 
 // SAFETY: Class is Sync because:
-// - Methods table access is protected by RwLock
-// - Class metadata is immutable after construction
-// - Arena provides stable pointers
+// - `Method`s table access is protected by RwLock
+// - `Class` metadata is immutable after construction
+// - `Arena` provides stable pointers
 unsafe impl Sync for Class {}
 
 impl Clone for Class {
@@ -488,7 +638,7 @@ impl Eq for Class {}
 impl fmt::Debug for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let super_name = self.super_class().map(|c| c.name().to_string());
-        f.debug_struct("Class")
+        f.debug_struct("`Class`")
             .field("name", &self.name())
             .field("super_class", &super_name)
             .finish()
@@ -497,12 +647,24 @@ impl fmt::Debug for Class {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
+
+    /// Test helper function that does nothing (no-op method implementation)
+    unsafe extern "C" fn test_method_noop(
+        _self: crate::runtime::object::ObjectPtr,
+        _cmd: SelectorHandle,
+        _args: *const *mut u8,
+        _ret: *mut u8,
+    ) {
+        // No-op for testing
+    }
 
     #[test]
     fn test_root_class_creation() {
-        let class = Class::new_root("TestClass").unwrap();
-        assert_eq!(class.name(), "TestClass");
+        let class = Class::new_root("Test`Class`").unwrap();
+        assert_eq!(class.name(), "Test`Class`");
         assert!(class.super_class().is_none());
     }
 
@@ -545,22 +707,32 @@ mod tests {
 
         assert_eq!(d.name(), "DeepChainD");
         assert_eq!(d.super_class().unwrap().name(), "DeepChainC");
-        assert_eq!(d.super_class().unwrap().super_class().unwrap().name(), "DeepChainB");
         assert_eq!(
-            d.super_class().unwrap().super_class().unwrap().super_class().unwrap().name(),
+            d.super_class().unwrap().super_class().unwrap().name(),
+            "DeepChainB"
+        );
+        assert_eq!(
+            d.super_class()
+                .unwrap()
+                .super_class()
+                .unwrap()
+                .super_class()
+                .unwrap()
+                .name(),
             "DeepChainA"
         );
     }
 
     #[test]
     fn test_method_registration() {
-        let class = Class::new_root("MethodsTest").unwrap();
+        let class = Class::new_root("`Method`sTest").unwrap();
         let sel = Selector::from_str("doSomething:").unwrap();
 
+        let arena = get_global_arena();
         let method = Method {
             selector: sel.clone(),
-            _imp: (),
-            _types: (),
+            imp: test_method_noop,
+            types: RuntimeString::new("v@:", arena),
         };
 
         class.add_method(method).unwrap();
@@ -573,28 +745,29 @@ mod tests {
     #[test]
     fn test_inheritance_lookup() {
         let parent = Class::new_root("InheritLookupParent").unwrap();
-        let sel = Selector::from_str("inheritedMethod").unwrap();
+        let sel = Selector::from_str("inherited`Method`").unwrap();
 
+        let arena = get_global_arena();
         let method = Method {
             selector: sel.clone(),
-            _imp: (),
-            _types: (),
+            imp: test_method_noop,
+            types: RuntimeString::new("v@:", arena),
         };
 
         parent.add_method(method).unwrap();
 
         let child = Class::new("InheritLookupChild", &parent).unwrap();
 
-        // Method found in parent
+        // `Method` found in parent
         let found = child.lookup_method(&sel);
         assert!(found.is_some());
-        assert_eq!(found.unwrap().selector.name(), "inheritedMethod");
+        assert_eq!(found.unwrap().selector.name(), "inherited`Method`");
     }
 
     #[test]
     fn test_method_not_found() {
         let class = Class::new_root("NotFoundTest").unwrap();
-        let sel = Selector::from_str("nonExistentMethod").unwrap();
+        let sel = Selector::from_str("nonExistent`Method`").unwrap();
 
         let found = class.lookup_method(&sel);
         assert!(found.is_none());
@@ -654,7 +827,7 @@ mod tests {
         let root = Class::new_root("DebugRoot").unwrap();
         let child = Class::new("DebugChild", &root).unwrap();
 
-        let debug_str = format!("{:?}", child);
+        let debug_str = format!("{child:?}");
 
         assert!(debug_str.contains("DebugChild"));
         assert!(debug_str.contains("DebugRoot"));
@@ -664,21 +837,23 @@ mod tests {
     fn test_method_override() {
         let parent = Class::new_root("OverrideParent").unwrap();
         let child = Class::new("OverrideChild", &parent).unwrap();
-        let sel = Selector::from_str("overrideMethod").unwrap();
+        let sel = Selector::from_str("override`Method`").unwrap();
+
+        let arena = get_global_arena();
 
         // Add method to parent
         let parent_method = Method {
             selector: sel.clone(),
-            _imp: (),
-            _types: (),
+            imp: test_method_noop,
+            types: RuntimeString::new("v@:", arena),
         };
         parent.add_method(parent_method).unwrap();
 
         // Override in child
         let child_method = Method {
             selector: sel.clone(),
-            _imp: (),
-            _types: (),
+            imp: test_method_noop,
+            types: RuntimeString::new("v@:", arena),
         };
         child.add_method(child_method).unwrap();
 

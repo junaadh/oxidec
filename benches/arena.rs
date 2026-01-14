@@ -4,7 +4,9 @@
 // including sequential allocations, mixed workloads, chunk growth,
 // and thread-local vs global arena comparisons.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{
+    BenchmarkId, Criterion, black_box, criterion_group, criterion_main,
+};
 use oxidec::runtime::{Arena, LocalArena};
 
 /// Benchmark sequential allocations of different sizes.
@@ -17,12 +19,16 @@ fn bench_sequential_allocations(c: &mut Criterion) {
     group.sample_size(1000);
 
     for size in [4, 16, 64, 256, 1024, 4096].iter() {
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            let arena = Arena::new(4096);
-            b.iter(|| {
-                arena.alloc(black_box(size));
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(size),
+            size,
+            |b, &size| {
+                let arena = Arena::new(4096);
+                b.iter(|| {
+                    arena.alloc(black_box(size));
+                });
+            },
+        );
     }
 
     group.finish();
@@ -38,7 +44,7 @@ fn bench_mixed_allocations(c: &mut Criterion) {
 
     group.bench_function("variable_sizes", |b| {
         let arena = Arena::new(4096);
-        let sizes = vec![4, 16, 64, 256, 1024];
+        let sizes = [4, 16, 64, 256, 1024];
         let mut i = 0;
 
         b.iter(|| {

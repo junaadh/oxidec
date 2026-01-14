@@ -1,13 +1,18 @@
-//! Selector interning and caching for the `OxideC` runtime.
+//! `Selector` interning and caching for the ``OxideC`` runtime.
 //!
 //! This module implements a global selector registry with interning, ensuring
-//! that each unique selector name has exactly one `Selector` instance. This
+//! that each unique selector name has exactly one ``Selector`` instance. This
 //! enables fast pointer equality comparison and efficient method lookup.
+
+// Allow cast truncation - NUM_BUCKETS is 256 (fits in u8) and hashes are modulo 256
+#![allow(clippy::cast_possible_truncation)]
+// Allow pointer constness casts - needed for FFI compatibility
+#![allow(clippy::ptr_cast_constness)]
 //!
 //! # Architecture
 //!
-//! Selectors are **globally interned** in the global arena:
-//! - Each unique name maps to exactly one `Selector` instance
+//! `Selector`s are **globally interned** in the global arena:
+//! - Each unique name maps to exactly one ``Selector`` instance
 //! - Pointers are stable for the entire program duration
 //! - Comparison is O(1) pointer equality
 //! - Hash is precomputed once at creation time
@@ -18,24 +23,104 @@
 //! multiple threads. Uses `RwLock` for bucket access and atomic operations for
 //! initialization.
 
+use crate::Error;
 use crate::error::Result;
-use crate::runtime::{get_global_arena, RuntimeString};
+use crate::runtime::{RuntimeString, get_global_arena};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
-use std::sync::RwLock;
+use std::str::FromStr;
 use std::sync::OnceLock;
+use std::sync::RwLock;
 
 /// Number of hash buckets in the selector registry (power of 2 for fast modulo).
 const NUM_BUCKETS: usize = 256;
 
+/// Opaque handle to a selector for FFI compatibility.
+///
+/// `SelectorHandle` is an opaque pointer type designed for C ABI compatibility
+/// in method implementations. It wraps a raw pointer to an interned selector
+/// while hiding the internal representation from FFI consumers.
+///
+/// # Purpose
+///
+/// This type serves as a bridge between Rust's type-safe `Selector` API and
+/// C-compatible function pointers. It enables:
+///
+/// - **FFI Integration**: Used in the `Imp` function pointer type for method
+///   implementations that follow the C ABI
+/// - **Binary Stability**: As an opaque type, it maintains a stable interface
+///   across code changes
+/// - **Type Safety**: Prevents direct manipulation of selector internals from
+///   FFI code while allowing safe conversion via `Selector`
+///
+/// # When to Use
+///
+/// - **FFI Boundaries**: Use `SelectorHandle` in function signatures that cross
+///   the FFI boundary (e.g., `Imp` method implementations)
+/// - **C Interop**: Use when passing selectors to/from C code
+/// - **Internal Runtime**: Use `Selector` instead for all internal Rust code
+///
+/// # Safety
+///
+/// `SelectorHandle` is safe through encapsulation:
+///
+/// - **Creation**: Only obtainable via `Selector::as_handle()`, ensuring validity
+/// - **Conversion**: Converting back to `Selector` requires `unsafe` code via
+///   `Selector::from_handle()`
+/// - **Lifetime**: The underlying selector has `'static` lifetime (allocated in
+///   global arena, never deallocated)
+/// - **Pointer Validity**: All handles point to valid, interned selectors
+///
+/// # Example
+///
+/// ```rust
+/// use oxidec::Selector;
+/// use oxidec::runtime::selector::SelectorHandle;
+/// use oxidec::runtime::object::ObjectPtr;
+/// use std::str::FromStr;
+///
+/// // In Rust code, work with the type-safe Selector
+/// let selector = Selector::from_str("init").unwrap();
+///
+/// // Convert to handle for FFI
+/// let handle = selector.as_handle();
+///
+/// // In FFI implementation (extern "C" fn)
+/// unsafe extern "C" fn my_method_impl(
+///     _self: ObjectPtr,
+///     _cmd: SelectorHandle,  // Received as FFI handle
+///     _args: *const *mut u8,
+///     _ret: *mut u8,
+/// ) {
+///     // Convert back to Selector when needed
+///     let selector = Selector::from_handle(_cmd);
+/// }
+/// ```
+///
+/// # Representation
+///
+/// - **Layout**: `#[repr(transparent)]` - guaranteed to have the same layout as
+///   the underlying raw pointer
+/// - **Size**: Pointer-sized (same as `*const InternedSelector`)
+/// - **Traits**: Implements `Copy`, `Clone`, `Eq`, `PartialEq` for value semantics
+///
+/// # See Also
+///
+/// - [`Selector::as_handle()`] - Convert Selector to handle
+/// - [`Selector::from_handle()`] - Convert handle to Selector (unsafe)
+/// - [`Imp`](crate::runtime::class::Imp) - FFI function pointer type using `SelectorHandle`
+#[repr(transparent)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct SelectorHandle(*const InternedSelector);
+
 /// Interned selector stored in the global arena.
 ///
 /// This struct is allocated in the global arena and never deallocated.
-/// Selectors have `'static` lifetime - they live for the entire program duration.
+/// `Selector`s have `'static` lifetime - they live for the entire program duration.
 #[repr(C)]
 struct InternedSelector {
-    /// Selector name (e.g., "initWithObjects:")
+    /// `Selector` name (e.g., "initWith`Object`s:")
     name: RuntimeString,
     /// Precomputed hash for fast comparison and lookup
     hash: u64,
@@ -48,32 +133,32 @@ struct InternedSelector {
 /// Uses open chaining with `RwLock` for thread-safe concurrent access.
 struct SelectorRegistry {
     /// Hash buckets: array of linked lists
-    /// Key: precomputed hash (mod NUM_BUCKETS)
-    /// Value: linked list of InternedSelector pointers
+    /// Key: precomputed hash (mod `NUM_BUCKETS`)
+    /// Value: linked list of Interned`Selector` pointers
     buckets: RwLock<Vec<*const InternedSelector>>,
 }
 
 // SAFETY: SelectorRegistry is Send + Sync because:
-// - InternedSelector pointers point to arena memory (never deallocated)
+// - Interned`Selector` pointers point to arena memory (never deallocated)
 // - RwLock provides synchronized access to buckets
-// - Arena ensures proper alignment and validity
+// - `Arena` ensures proper alignment and validity
 unsafe impl Send for SelectorRegistry {}
 unsafe impl Sync for SelectorRegistry {}
 
 /// Global selector registry instance.
 static REGISTRY: OnceLock<SelectorRegistry> = OnceLock::new();
 
-/// Selector represents a unique method name in the runtime.
+/// `Selector` represents a unique method name in the runtime.
 ///
-/// Selectors are **globally interned** - each unique name has exactly one
-/// `Selector` instance. This enables:
+/// `Selector`s are **globally interned** - each unique name has exactly one
+/// ``Selector`` instance. This enables:
 /// - Fast pointer equality comparison
 /// - Efficient method lookup
 /// - Precomputed hash for O(1) hashing
 ///
 /// # Memory Management
 ///
-/// Selectors are stored in the global arena with `'static` lifetime:
+/// `Selector`s are stored in the global arena with `'static` lifetime:
 /// - Never deallocated (lives for program duration)
 /// - Stable pointers (safe to store in raw pointers)
 /// - Thread-safe access (atomic operations)
@@ -89,6 +174,7 @@ static REGISTRY: OnceLock<SelectorRegistry> = OnceLock::new();
 ///
 /// ```rust
 /// use oxidec::Selector;
+/// use std::str::FromStr;
 ///
 /// let sel1 = Selector::from_str("init").unwrap();
 /// let sel2 = Selector::from_str("init").unwrap();
@@ -102,16 +188,17 @@ pub struct Selector {
     ptr: NonNull<InternedSelector>,
 }
 
-impl Selector {
+impl FromStr for Selector {
+    type Err = Error;
     /// Returns the selector for a given name, interning if necessary.
     ///
     /// # Arguments
     ///
-    /// * `name` - Selector name (e.g., "init", "initWithObjects:")
+    /// * `name` - `Selector` name (e.g., "init", "initWith`Object`s:")
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Selector)` with the interned selector, or `Err` on allocation failure.
+    /// Returns `Ok(`Selector`)` with the interned selector, or `Err` on allocation failure.
     ///
     /// # Performance
     ///
@@ -121,17 +208,18 @@ impl Selector {
     /// # Thread Safety
     ///
     /// Multiple threads can call this concurrently. Returns the same
-    /// `Selector` instance for the same name (pointer equality).
+    /// ``Selector`` instance for the same name (pointer equality).
     ///
     /// # Example
     ///
     /// ```rust
     /// use oxidec::Selector;
+    /// use std::str::FromStr;
     ///
     /// let sel = Selector::from_str("doSomething:withObject:").unwrap();
     /// assert_eq!(sel.name(), "doSomething:withObject:");
     /// ```
-    pub fn from_str(name: &str) -> Result<Self> {
+    fn from_str(name: &str) -> Result<Self> {
         // Initialize registry on first use
         let registry = REGISTRY.get_or_init(|| {
             let buckets = vec![std::ptr::null(); NUM_BUCKETS];
@@ -154,21 +242,25 @@ impl Selector {
             let mut current = buckets[bucket_idx];
 
             while !current.is_null() {
-                // SAFETY: current points to valid InternedSelector in global arena
-                // - Arena is never deallocated (static lifetime)
-                // - Pointer is properly aligned (Arena ensures 16-byte alignment)
+                // SAFETY: current points to valid Interned`Selector` in global arena
+                // - `Arena` is never deallocated (static lifetime)
+                // - Pointer is properly aligned (`Arena` ensures 16-byte alignment)
                 // - No mutable references exist (RwLock ensures exclusive access)
                 let interned = unsafe { &*current };
 
                 if interned.hash == hash {
                     // Hash matches, verify name equality
-                    // SAFETY: interned.name is valid RuntimeString
-                    // unwrap() is safe because RuntimeString in arena is always valid
+                    // SAFETY: interned.name is valid `RuntimeString`
+                    // unwrap() is safe because `RuntimeString` in arena is always valid
                     if interned.name.as_str().unwrap() == name {
                         // Found existing selector
                         // SAFETY: current is not null (checked above)
                         return Ok(Selector {
-                            ptr: unsafe { NonNull::new_unchecked(current as *mut InternedSelector) },
+                            ptr: unsafe {
+                                NonNull::new_unchecked(
+                                    current as *mut InternedSelector,
+                                )
+                            },
                         });
                     }
                 }
@@ -184,30 +276,33 @@ impl Selector {
         let mut current = buckets[bucket_idx];
         while !current.is_null() {
             let interned = unsafe { &*current };
-            // unwrap() is safe because RuntimeString in arena is always valid
-            if interned.hash == hash && interned.name.as_str().unwrap() == name {
+            // unwrap() is safe because `RuntimeString` in arena is always valid
+            if interned.hash == hash && interned.name.as_str().unwrap() == name
+            {
                 // Another thread inserted it, return existing
                 return Ok(Selector {
-                    ptr: unsafe { NonNull::new_unchecked(current as *mut InternedSelector) },
+                    ptr: unsafe {
+                        NonNull::new_unchecked(current as *mut InternedSelector)
+                    },
                 });
             }
             current = interned.next;
         }
 
-        // Allocate new InternedSelector in global arena
+        // Allocate new Interned`Selector` in global arena
         let arena = get_global_arena();
 
-        // Allocate RuntimeString for the name
+        // Allocate `RuntimeString` for the name
         let name_str = RuntimeString::new(name, arena);
 
-        // Create InternedSelector struct
+        // Create Interned`Selector` struct
         let interned = InternedSelector {
             name: name_str,
             hash,
             next: buckets[bucket_idx], // Insert at head of list
         };
 
-        // Allocate InternedSelector struct in arena
+        // Allocate Interned`Selector` struct in arena
         // SAFETY: We're allocating in the global arena, which lives for 'static
         // The struct will never be deallocated
         let interned_ptr: *mut InternedSelector = arena.alloc(interned);
@@ -220,7 +315,32 @@ impl Selector {
             ptr: unsafe { NonNull::new_unchecked(interned_ptr) },
         })
     }
+}
 
+impl Selector {
+    #[inline]
+    #[must_use]
+    pub fn as_handle(&self) -> SelectorHandle {
+        SelectorHandle(self.ptr.as_ptr())
+    }
+
+    /// .
+    ///
+    /// # Safety
+    ///
+    /// .
+    #[inline]
+    #[must_use]
+    pub unsafe fn from_handle(h: SelectorHandle) -> Self {
+        Selector {
+            ptr: unsafe {
+                NonNull::new_unchecked(h.0 as *mut InternedSelector)
+            },
+        }
+    }
+}
+
+impl Selector {
     /// Returns the selector's name as a string slice.
     ///
     /// # Returns
@@ -231,17 +351,23 @@ impl Selector {
     ///
     /// ```rust
     /// use oxidec::Selector;
+    /// use std::str::FromStr;
     ///
     /// let sel = Selector::from_str("initWithObjects:").unwrap();
     /// assert_eq!(sel.name(), "initWithObjects:");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the selector's name string in the arena is invalid UTF-8
+    /// (which should never happen under normal circumstances).
     #[must_use]
     pub fn name(&self) -> &str {
-        // SAFETY: self.ptr points to valid InternedSelector in global arena
-        // - Arena is never deallocated
+        // SAFETY: self.ptr points to valid Interned`Selector` in global arena
+        // - `Arena` is never deallocated
         // - Pointer is properly aligned
-        // - InternedSelector.name is valid RuntimeString
-        // unwrap() is safe because RuntimeString in arena is always valid
+        // - Interned`Selector`.name is valid `RuntimeString`
+        // unwrap() is safe because `RuntimeString` in arena is always valid
         unsafe { &(*self.ptr.as_ptr()).name }.as_str().unwrap()
     }
 
@@ -262,6 +388,7 @@ impl Selector {
     /// use oxidec::Selector;
     /// use std::collections::hash_map::DefaultHasher;
     /// use std::hash::{Hash, Hasher};
+    /// use std::str::FromStr;
     ///
     /// let sel = Selector::from_str("hashMethod").unwrap();
     ///
@@ -272,21 +399,21 @@ impl Selector {
     /// ```
     #[must_use]
     pub fn hash(&self) -> u64 {
-        // SAFETY: self.ptr points to valid InternedSelector
-        unsafe { *(&(*self.ptr.as_ptr()).hash) }
+        // SAFETY: self.ptr points to valid Interned`Selector`
+        unsafe { (*self.ptr.as_ptr()).hash }
     }
 }
 
 // SAFETY: Selector is Send because:
-// - InternedSelector is in arena (never moves, 'static lifetime)
+// - Interned`Selector` is in arena (never moves, 'static lifetime)
 // - Pointer is valid for entire program duration
 // - No mutable state (all fields immutable after creation)
 unsafe impl Send for Selector {}
 
 // SAFETY: Selector is Sync because:
 // - All methods only read immutable data
-// - InternedSelector never changes after creation
-// - Arena provides stable pointers
+// - Interned`Selector` never changes after creation
+// - `Arena` provides stable pointers
 unsafe impl Sync for Selector {}
 
 impl Clone for Selector {
@@ -313,7 +440,7 @@ impl Hash for Selector {
 
 impl fmt::Debug for Selector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Selector")
+        f.debug_struct("`Selector`")
             .field("name", &self.name())
             .field("hash", &format!("{:#x}", self.hash()))
             .finish()
@@ -372,8 +499,8 @@ mod tests {
 
     #[test]
     fn test_selector_name() {
-        let sel = Selector::from_str("initWithObjects:count:").unwrap();
-        assert_eq!(sel.name(), "initWithObjects:count:");
+        let sel = Selector::from_str("initWith`Object`s:count:").unwrap();
+        assert_eq!(sel.name(), "initWith`Object`s:count:");
     }
 
     #[test]
@@ -390,16 +517,16 @@ mod tests {
 
     #[test]
     fn test_selector_debug() {
-        let sel = Selector::from_str("debugMethod:").unwrap();
-        let debug_str = format!("{:?}", sel);
+        let sel = Selector::from_str("debug`Method`:").unwrap();
+        let debug_str = format!("{sel:?}");
 
-        assert!(debug_str.contains("debugMethod:"));
-        assert!(debug_str.contains("Selector"));
+        assert!(debug_str.contains("debug`Method`:"));
+        assert!(debug_str.contains("`Selector`"));
     }
 
     #[test]
     fn test_selector_thread_safety() {
-        let name = "concurrentSelector:";
+        let name = "concurrent`Selector`:";
         let handles: Vec<_> = (0..10)
             .map(|_| {
                 let name = name.to_string();
@@ -407,10 +534,8 @@ mod tests {
             })
             .collect();
 
-        let selectors: Vec<_> = handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect();
+        let selectors: Vec<_> =
+            handles.into_iter().map(|h| h.join().unwrap()).collect();
 
         // All threads should get the same selector pointer
         for sel in &selectors[1..] {
