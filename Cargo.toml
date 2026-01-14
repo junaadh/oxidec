@@ -1,0 +1,25 @@
+[package]
+name = "oxidec"
+version = "0.1.0"
+edition = "2024"
+authors = ["Junaadh <junaadh.02@icloud.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/junaadh/oxidec"
+homepage = "https://oxidec.dev"
+description = "OxideC: A modern Objective-C inspired dynamic runtime for systems programming"
+readme = "README.md"
+keywords = ["objective-c", "runtime", "ffi", "dynamic", "memory"]
+categories = ["memory-management", "development-tools::ffi", "api-bindings"]
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "arena"
+harness = false
+
+[[bench]]
+name = "string"
+harness = false
