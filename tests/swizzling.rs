@@ -5,8 +5,8 @@
 
 mod common;
 
-use oxidec::runtime::{Class, Object, Selector};
 use oxidec::runtime::MessageArgs;
+use oxidec::runtime::{Class, Object, Selector};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::thread;
@@ -19,7 +19,10 @@ fn test_swizzle_basic() {
     // Create class with a method
     let class = Class::new_root("SwizzleBasic").unwrap();
     let sel = Selector::from_str("getValue").unwrap();
-    let method = common::create_test_method_returning_int(sel.clone(), common::return_42_impl);
+    let method = common::create_test_method_returning_int(
+        sel.clone(),
+        common::return_42_impl,
+    );
     class.add_method(method).unwrap();
 
     let obj = Object::new(&class).unwrap();
@@ -30,7 +33,8 @@ fn test_swizzle_basic() {
     assert_eq!(original_value, 42, "Original method should return 42");
 
     // Swizzle to return 100 instead
-    let original_imp = class.swizzle_method(&sel, common::return_100_impl).unwrap();
+    let original_imp =
+        class.swizzle_method(&sel, common::return_100_impl).unwrap();
 
     // Call swizzled method (should now return 100)
     let result = Object::send_message(&obj, &sel, &MessageArgs::None).unwrap();
@@ -54,7 +58,10 @@ fn test_swizzle_inheritance() {
     // Create parent class with a method
     let parent_class = Class::new_root("SwizzleParent").unwrap();
     let sel = Selector::from_str("inheritedMethod").unwrap();
-    let method = common::create_test_method_returning_int(sel.clone(), common::return_42_impl);
+    let method = common::create_test_method_returning_int(
+        sel.clone(),
+        common::return_42_impl,
+    );
     parent_class.add_method(method).unwrap();
 
     let parent_obj = Object::new(&parent_class).unwrap();
@@ -64,23 +71,42 @@ fn test_swizzle_inheritance() {
     let child_obj = Object::new(&child_class).unwrap();
 
     // Verify both return 42 initially
-    let parent_result = Object::send_message(&parent_obj, &sel, &MessageArgs::None).unwrap();
+    let parent_result =
+        Object::send_message(&parent_obj, &sel, &MessageArgs::None).unwrap();
     assert_eq!(parent_result.unwrap() as i32, 42);
 
-    let child_result = Object::send_message(&child_obj, &sel, &MessageArgs::None).unwrap();
+    let child_result =
+        Object::send_message(&child_obj, &sel, &MessageArgs::None).unwrap();
     assert_eq!(child_result.unwrap() as i32, 42);
 
     // Swizzle child class method
-    child_class.add_method(common::create_test_method_returning_int(sel.clone(), common::return_42_impl)).unwrap();
-    let _original = child_class.swizzle_method(&sel, common::return_100_impl).unwrap();
+    child_class
+        .add_method(common::create_test_method_returning_int(
+            sel.clone(),
+            common::return_42_impl,
+        ))
+        .unwrap();
+    let _original = child_class
+        .swizzle_method(&sel, common::return_100_impl)
+        .unwrap();
 
     // Child should now return 100
-    let child_result = Object::send_message(&child_obj, &sel, &MessageArgs::None).unwrap();
-    assert_eq!(child_result.unwrap() as i32, 100, "Child should return 100 after swizzle");
+    let child_result =
+        Object::send_message(&child_obj, &sel, &MessageArgs::None).unwrap();
+    assert_eq!(
+        child_result.unwrap() as i32,
+        100,
+        "Child should return 100 after swizzle"
+    );
 
     // Parent should still return 42 (unaffected)
-    let parent_result = Object::send_message(&parent_obj, &sel, &MessageArgs::None).unwrap();
-    assert_eq!(parent_result.unwrap() as i32, 42, "Parent should still return 42");
+    let parent_result =
+        Object::send_message(&parent_obj, &sel, &MessageArgs::None).unwrap();
+    assert_eq!(
+        parent_result.unwrap() as i32,
+        42,
+        "Parent should still return 42"
+    );
 }
 
 /// Test that cache is invalidated after swizzling
@@ -91,23 +117,32 @@ fn test_swizzle_cache_invalidation() {
     // Create class with method
     let class = Class::new_root("CacheInvalidation").unwrap();
     let sel = Selector::from_str("cachedMethod").unwrap();
-    let method = common::create_test_method_returning_int(sel.clone(), common::return_42_impl);
+    let method = common::create_test_method_returning_int(
+        sel.clone(),
+        common::return_42_impl,
+    );
     class.add_method(method).unwrap();
 
     let obj = Object::new(&class).unwrap();
 
     // Call method multiple times to populate cache
     for _ in 0..3 {
-        let result = Object::send_message(&obj, &sel, &MessageArgs::None).unwrap();
+        let result =
+            Object::send_message(&obj, &sel, &MessageArgs::None).unwrap();
         assert_eq!(result.unwrap() as i32, 42);
     }
 
     // Swizzle method
-    let _original = class.swizzle_method(&sel, common::return_100_impl).unwrap();
+    let _original =
+        class.swizzle_method(&sel, common::return_100_impl).unwrap();
 
     // Cache should be invalidated, so new implementation should be called
     let result = Object::send_message(&obj, &sel, &MessageArgs::None).unwrap();
-    assert_eq!(result.unwrap() as i32, 100, "Cache should be invalidated after swizzle");
+    assert_eq!(
+        result.unwrap() as i32,
+        100,
+        "Cache should be invalidated after swizzle"
+    );
 
     // Restore
     class.swizzle_method(&sel, common::return_42_impl).unwrap();
@@ -121,7 +156,10 @@ fn test_swizzle_thread_safety() {
     // Create class with method
     let class = Class::new_root("ThreadSafeSwizzle").unwrap();
     let sel = Selector::from_str("threadSafeMethod").unwrap();
-    let method = common::create_test_method_returning_int(sel.clone(), common::return_42_impl);
+    let method = common::create_test_method_returning_int(
+        sel.clone(),
+        common::return_42_impl,
+    );
     class.add_method(method).unwrap();
 
     let obj = Object::new(&class).unwrap();
@@ -133,9 +171,11 @@ fn test_swizzle_thread_safety() {
             let sel_clone = sel.clone();
             thread::spawn(move || {
                 // Swizzle back and forth
-                let _ = class_clone.swizzle_method(&sel_clone, common::return_100_impl);
+                let _ = class_clone
+                    .swizzle_method(&sel_clone, common::return_100_impl);
                 SWIZZLE_COUNT.fetch_add(1, Ordering::SeqCst);
-                let _ = class_clone.swizzle_method(&sel_clone, common::return_42_impl);
+                let _ = class_clone
+                    .swizzle_method(&sel_clone, common::return_42_impl);
             })
         })
         .collect();
@@ -186,7 +226,8 @@ fn test_swizzle_runtime_patching() {
     let class = Class::new_root("BuggyClass").unwrap();
     let sel = Selector::from_str("buggyMethod").unwrap();
 
-    let method = common::create_test_method_returning_int(sel.clone(), buggy_impl);
+    let method =
+        common::create_test_method_returning_int(sel.clone(), buggy_impl);
     class.add_method(method).unwrap();
 
     let obj = Object::new(&class).unwrap();
@@ -241,7 +282,8 @@ fn test_swizzle_debugging_injection() {
     // Create class with method
     let class = Class::new_root("DebugClass").unwrap();
     let sel = Selector::from_str("debugMethod").unwrap();
-    let method = common::create_test_method_returning_int(sel.clone(), original_impl);
+    let method =
+        common::create_test_method_returning_int(sel.clone(), original_impl);
     class.add_method(method).unwrap();
 
     let obj = Object::new(&class).unwrap();
@@ -257,7 +299,11 @@ fn test_swizzle_debugging_injection() {
     // Call with debug wrapper
     let result = Object::send_message(&obj, &sel, &MessageArgs::None).unwrap();
     assert_eq!(result.unwrap() as i32, 42);
-    assert_eq!(DEBUG_CALL_COUNT.load(Ordering::SeqCst), 1, "Debug wrapper should track calls");
+    assert_eq!(
+        DEBUG_CALL_COUNT.load(Ordering::SeqCst),
+        1,
+        "Debug wrapper should track calls"
+    );
 
     // Remove debug wrapper (restore original)
     class.swizzle_method(&sel, original_impl).unwrap();

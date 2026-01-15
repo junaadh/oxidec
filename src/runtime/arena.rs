@@ -660,7 +660,8 @@ impl Arena {
             let current_capacity = unsafe { &*current_ptr }.capacity;
 
             // Calculate new chunk size (double the current, up to MAX_CHUNK_SIZE)
-            let new_size = (current_capacity * 2).min(MAX_CHUNK_SIZE).max(min_size);
+            let new_size =
+                (current_capacity * 2).min(MAX_CHUNK_SIZE).max(min_size);
 
             let new_chunk = Chunk::new(new_size)?;
 
@@ -679,7 +680,7 @@ impl Arena {
             match self.current_chunk.compare_exchange_weak(
                 current_ptr,
                 new_chunk_raw,
-                Ordering::AcqRel,  // Success ordering: ensures all writes to new chunk are visible
+                Ordering::AcqRel, // Success ordering: ensures all writes to new chunk are visible
                 Ordering::Acquire, // Failure ordering: ensures we see the latest chunk
             ) {
                 Ok(_) => {

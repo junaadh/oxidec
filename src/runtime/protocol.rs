@@ -176,7 +176,8 @@ impl Protocol {
         if ptr.is_null() {
             return Err(Error::OutOfMemory);
         }
-        let inner = unsafe { NonNull::new_unchecked(ptr.cast::<ProtocolInner>()) };
+        let inner =
+            unsafe { NonNull::new_unchecked(ptr.cast::<ProtocolInner>()) };
 
         Ok(Protocol { inner })
     }
@@ -217,7 +218,12 @@ impl Protocol {
     ///
     /// Returns `Err(Error::ProtocolMethodAlreadyRegistered)` if a method
     /// with this selector is already registered in the protocol.
-    pub fn add_required(&self, selector: Selector, types: &str, arena: &crate::runtime::Arena) -> Result<()> {
+    pub fn add_required(
+        &self,
+        selector: Selector,
+        types: &str,
+        arena: &crate::runtime::Arena,
+    ) -> Result<()> {
         // SAFETY: self.inner points to valid ProtocolInner
         let inner = unsafe { &*self.inner.as_ptr() };
 
@@ -273,7 +279,12 @@ impl Protocol {
     ///
     /// Returns `Err(Error::ProtocolMethodAlreadyRegistered)` if a method
     /// with this selector is already registered in the protocol.
-    pub fn add_optional(&self, selector: Selector, types: &str, arena: &crate::runtime::Arena) -> Result<()> {
+    pub fn add_optional(
+        &self,
+        selector: Selector,
+        types: &str,
+        arena: &crate::runtime::Arena,
+    ) -> Result<()> {
         // SAFETY: self.inner points to valid ProtocolInner
         let inner = unsafe { &*self.inner.as_ptr() };
 
@@ -463,9 +474,16 @@ impl fmt::Debug for Protocol {
             .field("name", &inner.name.as_str().unwrap_or("<invalid>"))
             .field("required_count", &required.len())
             .field("optional_count", &optional.len())
-            .field("base_protocol", &inner.base_protocol.map(|p| unsafe {
-                (&*p.as_ptr()).name.as_str().unwrap_or("<invalid>").to_string()
-            }))
+            .field(
+                "base_protocol",
+                &inner.base_protocol.map(|p| unsafe {
+                    (&*p.as_ptr())
+                        .name
+                        .as_str()
+                        .unwrap_or("<invalid>")
+                        .to_string()
+                }),
+            )
             .finish()
     }
 }
@@ -479,7 +497,7 @@ impl Clone for Protocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{get_global_arena, Method};
+    use crate::runtime::{Method, get_global_arena};
     use std::str::FromStr;
 
     #[test]
@@ -528,12 +546,12 @@ mod tests {
     fn test_protocol_inheritance_methods() {
         let base = Protocol::new("BaseProtocol", None).unwrap();
         let sel1 = Selector::from_str("baseMethod").unwrap();
-        base.add_required(sel1, "v@:", get_global_arena())
-            .unwrap();
+        base.add_required(sel1, "v@:", get_global_arena()).unwrap();
 
         let derived = Protocol::new("DerivedProtocol", Some(&base)).unwrap();
         let sel2 = Selector::from_str("derivedMethod").unwrap();
-        derived.add_required(sel2, "v@:", get_global_arena())
+        derived
+            .add_required(sel2, "v@:", get_global_arena())
             .unwrap();
 
         // all_required should include both base and derived methods
@@ -624,7 +642,8 @@ mod tests {
         let protocols = child.protocols();
         assert_eq!(protocols.len(), 2);
 
-        let protocol_names: Vec<&str> = protocols.iter().map(super::Protocol::name).collect();
+        let protocol_names: Vec<&str> =
+            protocols.iter().map(super::Protocol::name).collect();
         assert!(protocol_names.contains(&"Proto1"));
         assert!(protocol_names.contains(&"Proto2"));
     }
@@ -748,13 +767,13 @@ mod tests {
         // Create base protocol with required methods
         let base = Protocol::new("BaseProtocol", None).unwrap();
         let sel1 = Selector::from_str("baseMethod").unwrap();
-        base.add_required(sel1, "v@:", get_global_arena())
-            .unwrap();
+        base.add_required(sel1, "v@:", get_global_arena()).unwrap();
 
         // Create derived protocol that inherits from base
         let derived = Protocol::new("DerivedProtocol", Some(&base)).unwrap();
         let sel2 = Selector::from_str("derivedMethod").unwrap();
-        derived.add_required(sel2, "v@:", get_global_arena())
+        derived
+            .add_required(sel2, "v@:", get_global_arena())
             .unwrap();
 
         let class = Class::new_root("InheritanceClass").unwrap();

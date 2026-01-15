@@ -182,7 +182,7 @@ pub enum ForwardingResult {
 /// * `ForwardingResult::Target(target)` - A forwarding target was found
 /// * `ForwardingResult::NotFound` - No forwarding target found
 /// * `ForwardingResult::LoopDetected` - Forwarding loop detected
-#[must_use] 
+#[must_use]
 pub fn resolve_forwarding(obj: &Object, sel: &Selector) -> ForwardingResult {
     // Check forwarding depth (loop detection)
     let depth = match increment_forwarding_depth() {
@@ -442,7 +442,6 @@ mod tests {
 
     /// Helper function to create a test class with a method
     fn create_test_class(name: &str) -> Class {
-        
         Class::new_root(name).unwrap()
     }
 
@@ -561,8 +560,10 @@ mod tests {
         static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
         // Set callback
-        set_forwarding_event_callback(|event| if let ForwardingEvent::ForwardingAttempt { .. } = event {
-            CALL_COUNT.fetch_add(1, Ordering::Release);
+        set_forwarding_event_callback(|event| {
+            if let ForwardingEvent::ForwardingAttempt { .. } = event {
+                CALL_COUNT.fetch_add(1, Ordering::Release);
+            }
         });
 
         // Emit event

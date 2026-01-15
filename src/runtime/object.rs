@@ -517,7 +517,9 @@ impl Object {
     ///
     /// Forwarding hooks must NOT re-enter the dispatch system to avoid deadlocks.
     /// Hooks should return quickly and avoid blocking operations.
-    pub fn set_global_forwarding_hook(hook: crate::runtime::forwarding::GlobalForwardingHook) {
+    pub fn set_global_forwarding_hook(
+        hook: crate::runtime::forwarding::GlobalForwardingHook,
+    ) {
         crate::runtime::forwarding::set_global_forwarding_hook(hook);
     }
 

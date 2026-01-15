@@ -1,0 +1,45 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(cargo build:*)",
+            "Bash(cargo test:*)",
+            "Bash(cargo bench:*)",
+            "Bash(git diff:*)",
+            "Bash(git status:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Read(**)",
+            "Edit(crates/**)",
+            "Edit(src/**)",
+            "Edit(tests/**)",
+            "Edit(docs/**)",
+            "Edit(.claude/settings.json)",
+            "Edit(Cargo.toml)",
+            "Edit(Cargo.lock)",
+            "Edit(RFC.md)",
+            "Edit(ARCHITECTURE.md)",
+            "Edit(SAFETY.md)",
+            "Edit(CLAUDE.md)",
+            "Edit(.gitignore)"
+        ],
+        "ask": [
+            "Bash(git push:*)",
+            "Bash(git pull:*)",
+            "Bash(rm -rf:*)",
+            "Edit(Cargo.toml)"
+        ],
+        "deny": [
+            "Read(.env)",
+            "Read(.env.*)",
+            "Read(./secrets/**)",
+            "Read(~/.aws/**)",
+            "Read(~/.ssh/**)",
+            "Edit(.git/**)"
+        ]
+    },
+    "env": {
+        "RUST_BACKTRACE": "1",
+        "RUST_LOG": "debug"
+    },
+    "hooks": {}
+}

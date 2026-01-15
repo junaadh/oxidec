@@ -137,7 +137,8 @@ impl Clone for RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
 
             // Increment refcount
@@ -171,7 +172,8 @@ impl Drop for RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
 
             // Decrement refcount
@@ -594,7 +596,8 @@ impl RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
             unsafe { (*heap_ptr).length.load(Ordering::Acquire) as usize }
         }
@@ -625,7 +628,8 @@ impl RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
             Ok(heap_ptr)
         }
@@ -696,7 +700,8 @@ impl RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
             let len =
                 unsafe { (*heap_ptr).length.load(Ordering::Acquire) as usize };
@@ -706,7 +711,8 @@ impl RuntimeString {
             // We use addr_of! to get a pointer without creating an intermediate reference,
             // which would violate Stacked Borrows.
             unsafe {
-                let data_ptr = std::ptr::addr_of!((*heap_ptr).data).cast::<u8>();
+                let data_ptr =
+                    std::ptr::addr_of!((*heap_ptr).data).cast::<u8>();
                 std::slice::from_raw_parts(data_ptr, len)
             }
         }
@@ -822,7 +828,8 @@ impl Hash for RuntimeString {
             // - Alignment is safe because arena allocations are always 16-byte aligned
             #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
-                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+                self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                    as *const HeapString
             };
             let hash = unsafe { (*heap_ptr).hash.load(Ordering::Acquire) };
             hash.hash(state);
@@ -1017,7 +1024,8 @@ mod tests {
         // - Alignment is safe because arena allocations are always 16-byte aligned
         #[expect(clippy::cast_ptr_alignment)]
         let heap_ptr1 = unsafe {
-            rs1.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
+            rs1.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK)
+                as *const HeapString
         };
         let initial_count =
             unsafe { (*heap_ptr1).refcount.load(Ordering::Acquire) };

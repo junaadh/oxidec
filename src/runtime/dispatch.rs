@@ -196,7 +196,8 @@ unsafe fn call_method_with_args(
         // SAFETY: ret_ptr points to valid memory where the IMP wrote the return value.
         // We use read_unaligned to handle potentially misaligned pointers.
         // The IMP function is responsible for writing the correct type.
-        let value = unsafe { std::ptr::read_unaligned(ret_ptr as *const usize) };
+        let value =
+            unsafe { std::ptr::read_unaligned(ret_ptr as *const usize) };
         Some(value)
     }
 }
@@ -254,12 +255,16 @@ pub unsafe fn send_message(
         use crate::runtime::forwarding;
 
         // Check cache first (performance optimization)
-        if let Some(cached_target) = forwarding::get_cached_target(obj, selector) {
-            forwarding::emit_forwarding_event(forwarding::ForwardingEvent::ForwardingSuccess {
-                object: obj.clone(),
-                selector: selector.clone(),
-                target: cached_target.clone(),
-            });
+        if let Some(cached_target) =
+            forwarding::get_cached_target(obj, selector)
+        {
+            forwarding::emit_forwarding_event(
+                forwarding::ForwardingEvent::ForwardingSuccess {
+                    object: obj.clone(),
+                    selector: selector.clone(),
+                    target: cached_target.clone(),
+                },
+            );
 
             let target_class = cached_target.class();
             if let Some(imp) = target_class.lookup_imp(selector) {
@@ -279,7 +284,14 @@ pub unsafe fn send_message(
                 }
 
                 // Call on cached target
-                return unsafe { Ok(call_method_with_args(&cached_target, imp, selector, args)) };
+                return unsafe {
+                    Ok(call_method_with_args(
+                        &cached_target,
+                        imp,
+                        selector,
+                        args,
+                    ))
+                };
             }
             // Cache miss - fall through to full forwarding resolution
         }
@@ -292,10 +304,13 @@ pub unsafe fn send_message(
 
                 // Retry dispatch on target
                 let target_class = target.class();
-                let target_imp = target_class.lookup_imp(selector).ok_or(Error::ForwardingFailed {
-                    selector: selector.name().to_string(),
-                    reason: "Target also doesn't recognize selector".to_string(),
-                })?;
+                let target_imp = target_class.lookup_imp(selector).ok_or(
+                    Error::ForwardingFailed {
+                        selector: selector.name().to_string(),
+                        reason: "Target also doesn't recognize selector"
+                            .to_string(),
+                    },
+                )?;
 
                 // Validate arguments for target
                 let method = target_class.lookup_method(selector).unwrap();
@@ -312,17 +327,25 @@ pub unsafe fn send_message(
                     });
                 }
 
-                return unsafe { Ok(call_method_with_args(&target, target_imp, selector, args)) };
+                return unsafe {
+                    Ok(call_method_with_args(
+                        &target, target_imp, selector, args,
+                    ))
+                };
             }
             forwarding::ForwardingResult::NotFound => {
                 // Check if object implements doesNotRecognizeSelector:
                 use std::str::FromStr;
                 let dnr_sel = Selector::from_str("doesNotRecognizeSelector:");
-                if dnr_sel.is_ok() && class.lookup_imp(&dnr_sel.unwrap()).is_some() {
-                    forwarding::emit_forwarding_event(forwarding::ForwardingEvent::DoesNotRecognize {
-                        object: obj.clone(),
-                        selector: selector.clone(),
-                    });
+                if dnr_sel.is_ok()
+                    && class.lookup_imp(&dnr_sel.unwrap()).is_some()
+                {
+                    forwarding::emit_forwarding_event(
+                        forwarding::ForwardingEvent::DoesNotRecognize {
+                            object: obj.clone(),
+                            selector: selector.clone(),
+                        },
+                    );
                     // Note: Full doesNotRecognizeSelector: invocation with selector argument
                     // would require packing the selector as a message argument. For now,
                     // we just emit the event and fall through to SelectorNotFound.
@@ -333,7 +356,8 @@ pub unsafe fn send_message(
             forwarding::ForwardingResult::LoopDetected => {
                 return Err(Error::ForwardingLoopDetected {
                     selector: selector.name().to_string(),
-                    depth: forwarding::FORWARDING_DEPTH.with(std::cell::Cell::get),
+                    depth: forwarding::FORWARDING_DEPTH
+                        .with(std::cell::Cell::get),
                 });
             }
         }

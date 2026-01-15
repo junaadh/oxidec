@@ -5,7 +5,9 @@
 
 #![allow(dead_code)]
 
-use oxidec::runtime::{Class, Method, RuntimeString, Selector, get_global_arena};
+use oxidec::runtime::{
+    Class, Method, RuntimeString, Selector, get_global_arena,
+};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

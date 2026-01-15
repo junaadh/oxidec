@@ -25,7 +25,9 @@
 //! multiple threads. Uses `RwLock` for method table protection.
 
 use crate::error::{Error, Result};
-use crate::runtime::{Class, Method, RuntimeString, Selector, get_global_arena};
+use crate::runtime::{
+    Class, Method, RuntimeString, Selector, get_global_arena,
+};
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr::NonNull;
@@ -173,7 +175,8 @@ impl Category {
         if ptr.is_null() {
             return Err(Error::OutOfMemory);
         }
-        let inner = unsafe { NonNull::new_unchecked(ptr.cast::<CategoryInner>()) };
+        let inner =
+            unsafe { NonNull::new_unchecked(ptr.cast::<CategoryInner>()) };
 
         // Register with class
         {
@@ -399,13 +402,15 @@ mod tests {
             selector: sel1.clone(),
             imp: test_method_noop,
             types: RuntimeString::new("v@:", get_global_arena()),
-        }).unwrap();
+        })
+        .unwrap();
 
         cat2.add_method(Method {
             selector: sel2.clone(),
             imp: test_method_noop,
             types: RuntimeString::new("v@:", get_global_arena()),
-        }).unwrap();
+        })
+        .unwrap();
 
         assert!(class.lookup_method(&sel1).is_some());
         assert!(class.lookup_method(&sel2).is_some());

@@ -82,13 +82,16 @@ pub(crate) struct ClassInner {
     flags: u32,
     /// Categories attached to this class
     /// Protected by `RwLock` for thread-safe category addition
-    pub(crate) categories: RwLock<Vec<NonNull<crate::runtime::category::CategoryInner>>>,
+    pub(crate) categories:
+        RwLock<Vec<NonNull<crate::runtime::category::CategoryInner>>>,
     /// Protocols this class conforms to
     /// Protected by `RwLock` for thread-safe protocol addition
-    pub(crate) protocols: RwLock<Vec<NonNull<crate::runtime::protocol::ProtocolInner>>>,
+    pub(crate) protocols:
+        RwLock<Vec<NonNull<crate::runtime::protocol::ProtocolInner>>>,
     /// Per-class forwarding hook (called when selector not found in instances)
     /// Protected by `RwLock` for thread-safe hook access
-    pub(crate) forwarding_hook: RwLock<Option<crate::runtime::forwarding::ClassForwardingHook>>,
+    pub(crate) forwarding_hook:
+        RwLock<Option<crate::runtime::forwarding::ClassForwardingHook>>,
 }
 
 /// Global class registry.
@@ -523,7 +526,9 @@ impl Class {
                 if let Some(method) = cat_methods.get(&hash) {
                     // Found in category!
                     // SAFETY: The method is in the arena and never deallocated
-                    return unsafe { Some(&*std::ptr::from_ref::<Method>(method)) };
+                    return unsafe {
+                        Some(&*std::ptr::from_ref::<Method>(method))
+                    };
                 }
             }
             drop(categories);
@@ -879,7 +884,10 @@ impl Class {
     ///
     /// Returns `Err(Error::MissingProtocolMethod)` if the class doesn't implement
     /// a required protocol method.
-    pub fn validate_protocol_conformance(&self, protocol: &Protocol) -> Result<()> {
+    pub fn validate_protocol_conformance(
+        &self,
+        protocol: &Protocol,
+    ) -> Result<()> {
         // Get all required methods from protocol (including base protocols)
         let required_methods = protocol.all_required();
 
@@ -981,7 +989,11 @@ impl Class {
     ///
     /// Panics if the internal lock is poisoned (indicates a concurrent
     /// access error or panic in another thread).
-    pub fn swizzle_method(&self, selector: &Selector, new_imp: Imp) -> Result<Imp> {
+    pub fn swizzle_method(
+        &self,
+        selector: &Selector,
+        new_imp: Imp,
+    ) -> Result<Imp> {
         let hash = selector.hash();
 
         // SAFETY: self.inner points to valid ClassInner allocated in arena
@@ -1048,7 +1060,10 @@ impl Class {
     ///
     /// Panics if the internal lock is poisoned (indicates a concurrent
     /// access error or panic in another thread).
-    pub fn set_forwarding_hook(&self, hook: crate::runtime::forwarding::ClassForwardingHook) {
+    pub fn set_forwarding_hook(
+        &self,
+        hook: crate::runtime::forwarding::ClassForwardingHook,
+    ) {
         // SAFETY: self.inner points to valid ClassInner allocated in arena
         let inner = unsafe { &*self.inner.as_ptr() };
         *inner.forwarding_hook.write().unwrap() = Some(hook);
@@ -1074,7 +1089,9 @@ impl Class {
     ///
     /// Panics if the internal lock is poisoned (indicates a concurrent
     /// access error or panic in another thread).
-    pub(crate) fn get_forwarding_hook(&self) -> Option<crate::runtime::forwarding::ClassForwardingHook> {
+    pub(crate) fn get_forwarding_hook(
+        &self,
+    ) -> Option<crate::runtime::forwarding::ClassForwardingHook> {
         // SAFETY: self.inner points to valid ClassInner allocated in arena
         let inner = unsafe { &*self.inner.as_ptr() };
         *inner.forwarding_hook.read().unwrap()

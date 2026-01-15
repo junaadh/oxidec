@@ -166,25 +166,28 @@ pub fn validate_encoding(encoding: &str) -> Result<()> {
 #[must_use]
 pub const fn size_of_type(type_char: char) -> Option<usize> {
     match type_char {
-        'v' => Some(0),  // void
-        '@' => Some(8),  // object (pointer)
-        ':' => Some(8),  // selector (pointer)
-        'i' => Some(4),  // i32
-        'l' => Some(8),  // long (64-bit)
-        'q' => Some(8),  // i64
-        'f' => Some(4),  // f32
-        'd' => Some(8),  // f64
-        '*' => Some(8),  // char*
-        '^' => Some(8),  // void*
-        '#' => Some(8),  // `Class` (pointer)
-        '?' => Some(8),  // unknown/block (pointer)
+        'v' => Some(0), // void
+        '@' => Some(8), // object (pointer)
+        ':' => Some(8), // selector (pointer)
+        'i' => Some(4), // i32
+        'l' => Some(8), // long (64-bit)
+        'q' => Some(8), // i64
+        'f' => Some(4), // f32
+        'd' => Some(8), // f64
+        '*' => Some(8), // char*
+        '^' => Some(8), // void*
+        '#' => Some(8), // `Class` (pointer)
+        '?' => Some(8), // unknown/block (pointer)
         _ => None,
     }
 }
 
 /// Checks if a character is a valid type encoding character.
 const fn is_valid_type_char(ch: char) -> bool {
-    matches!(ch, 'v' | '@' | ':' | 'i' | 'l' | 'q' | 'f' | 'd' | '*' | '^' | '#' | '?')
+    matches!(
+        ch,
+        'v' | '@' | ':' | 'i' | 'l' | 'q' | 'f' | 'd' | '*' | '^' | '#' | '?'
+    )
 }
 
 /// Parses a method signature encoding into return type and argument types.

@@ -2,11 +2,12 @@
 
 A modern Objective-C inspired dynamic object runtime in Rust, providing type-safe abstractions over zero-cost unsafe internals.
 
+**Version**: See [Cargo.toml](Cargo.toml) for current version
+**Status**: See [RFC.md](RFC.md) for roadmap status
+
 ## Overview
 
 OxideC implements a high-performance dynamic object runtime with manual memory management and compile-time safety guarantees. It combines the flexibility of Objective-C's message passing system with Rust's memory safety model.
-
-**Version**: 0.2.0-alpha
 
 ## Architecture
 
@@ -47,7 +48,7 @@ The runtime is built on a layered architecture:
 - [x] Atomic reference counting
 - [x] Lock-free arena allocation (global arena)
 - [x] Thread-local arena for single-threaded contexts
-- [x] MIRI validated with `-Zmiri-strict-provenance` (all 140 tests pass)
+- [x] MIRI validated with `-Zmiri-strict-provenance` (all tests pass)
 - [x] Stacked Borrows compliance
 - [x] Comprehensive SAFETY comments on all unsafe code
 - [x] Arena deallocation safety (Box ownership tracking)
@@ -55,17 +56,17 @@ The runtime is built on a layered architecture:
 - [x] Objective-C type encoding parser
 - [x] Type validation and verification
 - [x] Size calculation for encoded types
+- [x] Forwarding target for unhandled messages
+- [x] `forwardingTargetForSelector:` support
+- [x] Dynamic message forwarding
+- [x] Runtime method implementation swapping
+- [x] Atomic swizzle operations
+- [x] Cache invalidation on swizzle
 
 ### Planned
 - [ ] Automatic Reference Counting (ARC)
 - [ ] Weak references
 - [ ] Autorelease pools
-- [ ] Forwarding target for unhandled messages
-- [ ] `forwardingTargetForSelector:` support
-- [ ] Dynamic message forwarding
-- [ ] Runtime method implementation swapping
-- [ ] Atomic swizzle operations
-- [ ] Cache invalidation on swizzle
 - [ ] Protocol composition (multiple inheritance)
 - [ ] Default protocol method implementations
 - [ ] Protocol method signatures in type encoding
@@ -82,9 +83,7 @@ The runtime is built on a layered architecture:
 
 ## Testing
 
-- **Unit Tests**: 140 tests (all passing)
-- **Doc Tests**: 69 tests (all passing)
-- **MIRI Validation**: All tests pass with `-Zmiri-strict-provenance -Zmiri-ignore-leaks`
+See [RFC.md](RFC.md) for comprehensive test coverage and validation status.
 
 ## Safety Guarantees
 
@@ -113,9 +112,10 @@ Current performance characteristics (Apple M1):
 
 ## Documentation
 
+- **RFC & Roadmap**: See [RFC.md](RFC.md) for development status and roadmap
 - **Architecture**: See [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions
 - **Safety Guidelines**: See [SAFETY.md](SAFETY.md) for unsafe code patterns
-- **RFC**: See [RFC.md](RFC.md) for feature roadmap and planning
+- **Changelog**: See [CHANGELOG.md](CHANGELOG.md) for release history
 
 ## Example
 

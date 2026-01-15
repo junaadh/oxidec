@@ -4,8 +4,10 @@
 // including SSO (Small String Optimization), heap allocation, interning,
 // cloning, comparison, and conversions.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use oxidec::runtime::{RuntimeString, Arena};
+use criterion::{
+    BenchmarkId, Criterion, black_box, criterion_group, criterion_main,
+};
+use oxidec::runtime::{Arena, RuntimeString};
 use std::hash::Hash;
 
 /// Benchmark inline string creation (SSO).
@@ -18,10 +20,14 @@ fn bench_inline_string_creation(c: &mut Criterion) {
 
     for len in &[0, 1, 4, 8, 15] {
         let s = "a".repeat(*len);
-        group.bench_with_input(BenchmarkId::from_parameter(len), len, |b, _len| {
-            let arena = Arena::new(4096);
-            b.iter(|| RuntimeString::new(black_box(&s), &arena));
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(len),
+            len,
+            |b, _len| {
+                let arena = Arena::new(4096);
+                b.iter(|| RuntimeString::new(black_box(&s), &arena));
+            },
+        );
     }
 
     group.finish();
@@ -37,10 +43,14 @@ fn bench_heap_string_creation(c: &mut Criterion) {
 
     for len in &[16, 32, 64, 256, 1024] {
         let s = "a".repeat(*len);
-        group.bench_with_input(BenchmarkId::from_parameter(len), len, |b, _len| {
-            let arena = Arena::new(4096);
-            b.iter(|| RuntimeString::new(black_box(&s), &arena));
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(len),
+            len,
+            |b, _len| {
+                let arena = Arena::new(4096);
+                b.iter(|| RuntimeString::new(black_box(&s), &arena));
+            },
+        );
     }
 
     group.finish();
@@ -64,7 +74,10 @@ fn bench_string_clone(c: &mut Criterion) {
     // Heap string clone (atomic refcount increment)
     group.bench_function("heap_string", |b| {
         let arena = Arena::new(4096);
-        let rs = RuntimeString::new("This is a longer string that requires heap allocation", &arena);
+        let rs = RuntimeString::new(
+            "This is a longer string that requires heap allocation",
+            &arena,
+        );
         b.iter(|| black_box(&rs).clone());
     });
 
@@ -92,7 +105,10 @@ fn bench_string_comparison(c: &mut Criterion) {
     // Heap string comparison (same allocation - pointer equality)
     group.bench_function("heap_same_pointer", |b| {
         let arena = Arena::new(4096);
-        let rs1 = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs1 = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         let rs2 = rs1.clone();
         b.iter(|| black_box(&rs1) == black_box(&rs2));
     });
@@ -100,8 +116,14 @@ fn bench_string_comparison(c: &mut Criterion) {
     // Heap string comparison (different allocations - byte comparison)
     group.bench_function("heap_content_compare", |b| {
         let arena = Arena::new(4096);
-        let rs1 = RuntimeString::new("This is a long string that requires heap allocation", &arena);
-        let rs2 = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs1 = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
+        let rs2 = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         b.iter(|| black_box(&rs1) == black_box(&rs2));
     });
 
@@ -127,7 +149,8 @@ fn bench_interning(c: &mut Criterion) {
     // Cache miss - needs allocation
     group.bench_function("cache_miss", |b| {
         // Use a limited set of strings to avoid unbounded memory growth
-        let strings: Vec<String> = (0..100).map(|i| format!("uniqueString{i}:")).collect();
+        let strings: Vec<String> =
+            (0..100).map(|i| format!("uniqueString{i}:")).collect();
         let mut counter = 0;
         b.iter(|| {
             let s = &strings[counter % strings.len()];
@@ -160,14 +183,20 @@ fn bench_conversions(c: &mut Criterion) {
 
     group.bench_function("as_bytes_heap", |b| {
         let arena = Arena::new(4096);
-        let rs = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         b.iter(|| black_box(&rs).as_bytes());
     });
 
     // as_str() - includes UTF-8 validation
     group.bench_function("as_str_heap", |b| {
         let arena = Arena::new(4096);
-        let rs = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         b.iter(|| black_box(&rs).as_str().unwrap());
     });
 
@@ -180,7 +209,10 @@ fn bench_conversions(c: &mut Criterion) {
 
     group.bench_function("to_string_heap", |b| {
         let arena = Arena::new(4096);
-        let rs = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         b.iter(|| black_box(&rs).to_string());
     });
 
@@ -217,7 +249,10 @@ fn bench_hash(c: &mut Criterion) {
         use std::hash::Hasher;
 
         let arena = Arena::new(4096);
-        let rs = RuntimeString::new("This is a long string that requires heap allocation", &arena);
+        let rs = RuntimeString::new(
+            "This is a long string that requires heap allocation",
+            &arena,
+        );
         let mut hasher = DefaultHasher::new();
         rs.hash(&mut hasher);
         let _hash = hasher.finish();
