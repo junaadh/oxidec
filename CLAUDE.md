@@ -9,8 +9,8 @@ You are assisting with the OxideX project—a modern programming language combin
 ## Project Overview
 
 OxideX is building:
-- **OxideC Runtime** (Phase 1-3: COMPLETE) - Safe, high-performance dynamic runtime
-- **OxideX Language** (Phase 4-12: Planned) - Modern syntax with message-based semantics
+- **OxideC Runtime** (Phase 1-3: COMPLETE, Phase 3b-4c: Planned) - Safe, high-performance dynamic runtime
+- **OxideX Language** (Phase 5-13: Planned) - Modern syntax with message-based semantics
 
 ### OxideC Runtime
 - **Dynamic Dispatch** with late binding and method caching
@@ -80,15 +80,15 @@ oxidex/
 │   │   ├── benches/             # Performance benchmarks
 │   │   └── tests/               # Integration tests
 │   │
-│   ├── oxidex-syntax/            # Language syntax (Phase 4)
-│   ├── oxidex-typecheck/         # Type checker (Phase 5)
-│   ├── oxidex-codegen/           # Code generation (Phase 6)
-│   ├── oxidex-interpreter/       # Interpreter (Phase 7)
-│   ├── oxidex-bytecode/          # Bytecode VM (Phase 8)
-│   ├── oxidex-jit/               # JIT compiler (Phase 9)
-│   ├── oxidex-aot/               # AOT compiler (Phase 10)
-│   ├── oxidex-std/               # Standard library (Phase 11)
-│   └── oxidex-cli/               # CLI tools (Phase 12)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5)
+│   ├── oxidex-typecheck/         # Type checker (Phase 6)
+│   ├── oxidex-codegen/           # Code generation (Phase 7)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 8)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9)
+│   ├── oxidex-jit/               # JIT compiler (Phase 10)
+│   ├── oxidex-aot/               # AOT compiler (Phase 11)
+│   ├── oxidex-std/               # Standard library (Phase 12)
+│   └── oxidex-cli/               # CLI tools (Phase 13)
 ```
 
 ### OxideC Runtime Modules
@@ -134,17 +134,17 @@ crates/oxidec/src/runtime/
 - [x] Method overriding
 - [x] Message argument handling
 - [x] Type encoding system
-- [x] MIRI validation (all 115 tests pass with strict provenance)
+- [x] MIRI validation (see [RFC.md](RFC.md) for test counts)
 
 ### Phase 3: Extensions (Alpha 0.3) - COMPLETE
 - [x] Categories (dynamic methods)
 - [x] Protocols
 - [x] Message forwarding (per-class and global hooks)
 - [x] Method swizzling (runtime method replacement)
-- [x] Integration tests (16 new tests)
-- [x] MIRI validation (all 148 unit tests pass with strict provenance)
+- [x] Integration tests
+- [x] MIRI validation (see [RFC.md](RFC.md) for test counts)
 
-### Phase 4-12: Language Implementation (Planned)
+### Phase 5-13: Language Implementation (Planned)
 - [ ] Language frontend (syntax, parser, AST)
 - [ ] Type checker (inference, validation)
 - [ ] Code generation (AST → runtime calls)
@@ -184,7 +184,7 @@ All new features require:
 ### MIRI Validation
 Run MIRI before committing changes:
 ```bash
-MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" cargo +nightly miri test -p oxidec
+MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" cargo +nightly miri test
 ```
 
 All code must pass MIRI validation with strict provenance to ensure:
@@ -231,9 +231,9 @@ All code must pass MIRI validation with strict provenance to ensure:
 
 - **Edition**: 2024 (Rust stable)
 - **Target**: Message-based dynamic language with systems-level performance
-- **Status**: Runtime Phase 3 Complete (Alpha 0.3), Language Phase 4-12 Planned
-- **Next Milestone**: Phase 4 - Language Frontend Implementation
-- **Testing**: 238 tests passing (148 unit + 16 integration + 74 doctests)
+- **Status**: Runtime Phase 3 Complete (Alpha 0.3), Runtime Phase 3b-4c Planned, Language Phase 5-13 Planned
+- **Next Milestone**: Phase 3b - Selector Optimization & Regression Fixes
+- **Testing**: See [RFC.md](RFC.md) for test counts and coverage
 - **MIRI**: All tests pass with strict provenance validation
 
 ---

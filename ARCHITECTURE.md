@@ -427,7 +427,7 @@ MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \
 ```
 
 **Current Status:**
-- All 238 tests pass MIRI validation
+- See [RFC.md](RFC.md) for MIRI validation status
 - No UB detected
 - Strict provenance compliant
 
@@ -552,14 +552,16 @@ MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \
 
 **Current Status:**
 - Runtime Phase 1-3: COMPLETE
-- Language Phase 4-12: PLANNED
-- 238 tests passing
+- Runtime Phase 3b-4c: PLANNED
+- Language Phase 5-13: PLANNED
+- See [RFC.md](RFC.md) for test counts and validation status
 - MIRI validated (no UB)
 
 **Next Steps:**
-1. Fix selector interning regressions
-2. Optimize heap hash performance
-3. Begin language frontend implementation
+1. Fix selector interning regressions (Phase 3b)
+2. Complete message forwarding implementation (Phase 4a)
+3. Add runtime introspection APIs (Phase 4b)
+4. Formalize arena lifecycle management (Phase 4c)
 
 **This is a multi-year project. The foundation is solid. The vision is clear.**
 

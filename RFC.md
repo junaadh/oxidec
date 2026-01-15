@@ -1,7 +1,7 @@
 # RFC: OxideX Language & OxideC Runtime Specification
 
 **Author:** Junaadh
-**Status:** Runtime Phase 3 Complete, Language Phase 4-12 Planned
+**Status:** Runtime Phase 3 Complete, Language Phase 5-13 Planned
 **Date:** 2026-01-14
 **Version:** See workspace root [Cargo.toml](Cargo.toml)
 **Last Updated:** 2026-01-16
@@ -343,7 +343,7 @@ dog.makeSound()  // Compiles to objc_msgSend
 
 ```oxidex
 protocol Drawable {
-    fn draw() -> Void
+    fn draw()
     fn area() -> Double
 }
 
@@ -409,140 +409,1436 @@ struct Point {
 ```
 
 ---
-
 ## 4. Development Phases
 
-### Phase 1-3: Runtime (COMPLETE ✓)
+### Overview: Runtime-First Strategy
 
-**Goal:** Core OxideC runtime infrastructure
+**Core Principle:** The runtime must be complete, production-ready, and performance-optimized before language development begins.
+
+**Why?**
+- The language compiles to runtime calls—unstable runtime = unstable language
+- Runtime performance regressions propagate to every language feature
+- Runtime APIs must be finalized before codegen begins
+- Language features expose runtime capabilities—capabilities must exist first
+
+**Phase Structure:**
+- **Phases 1-3:** Foundation (COMPLETE)
+- **Phases 3b-4c:** Runtime Completion (Planned, 16-24 weeks)
+- **Phases 5-12:** Language Implementation (Planned, depends on Phase 4c completion)
+
+---
+
+## RUNTIME PHASES (OxideC)
+
+### Phase 1: Runtime Foundation - COMPLETE ✓
+
+**Goal:** Core runtime infrastructure
+
+**Duration:** 4 weeks (ACTUAL)
+**Completed:** 2026-01-15
+
+**Scope:**
+- Object model (isa, refcount, allocation)
+- Selector interning (global cache)
+- Message dispatch (nil → cache → table → forward)
+- Arena allocator (global + scoped)
+- Basic class system
+
+**Deliverables:**
+- [x] Object allocation and deallocation
+- [x] Reference counting (atomic)
+- [x] Selector interning with caching
+- [x] Class creation and registration
+- [x] Method table management
+- [x] Arena allocator implementation
+- [x] Runtime string with SSO
+
+**Test Coverage:**
+- Unit tests: 42 passing
+- MIRI validation: passing
+
+**Success Criteria:**
+- [x] All tests pass
+- [x] MIRI validation passes
+- [x] Allocations < 10ns
+- [x] Selector interning < 10ns
 
 **Status:** COMPLETE
-- 148 unit tests + 16 integration tests
-- MIRI validated with strict provenance
-- All core features working
 
 ---
 
-### Phase 4: Language Frontend (Planned)
+### Phase 2: Message Dispatch - COMPLETE ✓
 
-**Crate:** `oxidex-syntax`
+**Goal:** Fast, correct message sending
 
-**Duration:** 7-10 weeks
+**Duration:** 4 weeks (ACTUAL)
+**Completed:** 2026-01-15
 
 **Scope:**
-- Lexer (tokenization)
-- Parser (AST construction)
-- Error recovery
-- Source location tracking
+- Method lookup (cache → table → superclass)
+- Dispatch optimization (inline caching)
+- Inheritance resolution
+- Method overriding
+- Type encoding
+
+**Deliverables:**
+- [x] Basic dispatch pipeline
+- [x] Method caching per class
+- [x] Inheritance walking
+- [x] Override semantics
+- [x] Type encoding system
+- [x] Message argument handling
+
+**Test Coverage:**
+- Unit tests: 61 passing
+- MIRI validation: passing
+
+**Success Criteria:**
+- [x] Cached sends < 30ns
+- [x] Uncached sends < 100ns
+- [x] All tests pass
+- [x] Cache hit rate > 80%
+
+**Status:** COMPLETE
 
 ---
 
-### Phase 5: Type Checker (Planned)
+### Phase 3: Runtime Extensions - COMPLETE ✓
 
-**Crate:** `oxidex-typecheck`
+**Goal:** Dynamic runtime features
+
+**Duration:** 4 weeks (ACTUAL)
+**Completed:** 2026-01-15
+
+**Scope:**
+- Categories (dynamic method addition)
+- Protocols (conformance checking)
+- Message forwarding (basic implementation)
+- Method swizzling (runtime replacement)
+
+**Deliverables:**
+- [x] Category implementation
+- [x] Protocol system with inheritance
+- [x] Basic forwarding pipeline
+- [x] Method swizzling API
+
+**Test Coverage:**
+- Unit tests: 45 passing
+- Integration tests: 16 passing
+- MIRI validation: passing
+
+**Success Criteria:**
+- [x] All features working
+- [x] Basic forwarding implemented
+- [x] Swizzling safe and correct
+- [x] MIRI validation passes
+
+**Status:** COMPLETE
+
+---
+
+### Phase 3b: Selector Optimization & Regression Fixes - PLANNED
+
+**Goal:** Fix selector interning regressions and optimize hot paths
+
+**Duration:** 2-3 weeks
+**Priority:** CRITICAL (blocks all other phases)
+**Dependencies:** Phase 3 (COMPLETE)
+
+**Problem Statement:**
+Selector interning cache hits have regressed from ~3ns to unknown (slower). This affects every message send in the system. Since selectors are touched on every dispatch, this is a critical hot path regression.
+
+**Scope:**
+
+#### 3b.1: Profiling and Root Cause Analysis (Week 1)
+**Tasks:**
+- [ ] Profile selector interning with multiple tools (perf, flamegraph, cachegrind)
+- [ ] Identify regression source (hash function, cache structure, allocation pattern)
+- [ ] Measure cache hit/miss rates in real workloads
+- [ ] Document baseline vs current performance with statistical significance
+
+**Deliverables:**
+- Profiling report with flame graphs
+- Root cause analysis document
+- Regression reproduction case
+- Performance baseline measurements
+
+#### 3b.2: Hash Function Optimization (Week 1-2)
+**Tasks:**
+- [ ] Evaluate hash function performance (current vs alternatives)
+- [ ] Consider FxHash, AHash, or custom hash for short strings
+- [ ] Benchmark hash computation overhead
+- [ ] Implement and test optimal hash function
+- [ ] Validate hash distribution quality (collision rates)
+
+**Deliverables:**
+- Hash function benchmarks
+- Collision analysis
+- Implementation with tests
+- Performance comparison
+
+#### 3b.3: Cache Structure Optimization (Week 2)
+**Tasks:**
+- [ ] Evaluate DashMap performance vs alternatives (RwLock<HashMap>, custom)
+- [ ] Profile lock contention in cache access
+- [ ] Consider lock-free alternatives for read-heavy workload
+- [ ] Implement optimized cache structure
+- [ ] Add adaptive sizing if beneficial
+
+**Deliverables:**
+- Cache structure benchmarks
+- Lock contention analysis
+- Optimized implementation
+- A/B performance tests
+
+#### 3b.4: String Interning Optimization (Week 2-3)
+**Tasks:**
+- [ ] Optimize inline vs heap string decision
+- [ ] Improve heap string allocation pattern (arena vs individual)
+- [ ] Reduce allocation overhead for common selectors
+- [ ] Consider static interning for known selectors
+- [ ] Profile string copy/clone overhead
+
+**Deliverables:**
+- String allocation benchmarks
+- Optimized inline/heap threshold
+- Reduced allocation overhead
+- Static selector table (optional)
+
+#### 3b.5: Integration and Validation (Week 3)
+**Tasks:**
+- [ ] Integrate all optimizations
+- [ ] Run comprehensive benchmarks
+- [ ] Validate MIRI passes with changes
+- [ ] Regression test suite
+- [ ] Document optimizations and rationale
+
+**Success Criteria:**
+- [ ] Selector interning cache hits < 5ns (99th percentile)
+- [ ] Hash computation < 2ns for short strings (< 24 bytes)
+- [ ] Cache hit rate > 95% in real workloads
+- [ ] Zero regressions in other benchmarks
+- [ ] All tests pass (unit + integration + MIRI)
+- [ ] No new unsafe code or UB introduced
+
+**Test Requirements:**
+- Micro-benchmarks for each optimization
+- Integration benchmarks with real message sends
+- Stress tests (high contention, many selectors)
+- Performance regression tests
+- MIRI validation with strict provenance
+
+**Deliverables:**
+- Optimized selector interning system
+- Comprehensive benchmark suite
+- Performance analysis report
+- Documentation of optimizations
+
+**Metrics:**
+| Operation | Before | Target | Measurement Method |
+|-----------|--------|--------|-------------------|
+| Cache hit | Unknown (regressed) | < 5ns | criterion micro-benchmark |
+| Hash computation | Unknown | < 2ns | criterion micro-benchmark |
+| Cache miss | Unknown | < 50ns | criterion micro-benchmark |
+| Hit rate | Unknown | > 95% | runtime profiling |
+
+---
+
+### Phase 4a: Message Forwarding Completion - PLANNED
+
+**Goal:** Production-ready forwarding with full Objective-C semantics
+
+**Duration:** 4-5 weeks
+**Priority:** HIGH
+**Dependencies:** Phase 3b (selector optimization complete)
+
+**Problem Statement:**
+Current forwarding is basic—it works but lacks performance optimization, robust invocation management, and comprehensive proxy support. Forwarding is a first-class feature (not an edge case), enabling proxies, RPC, mocking, lazy loading, and more. It must be fast, correct, and complete.
+
+**Scope:**
+
+#### 4a.1: Invocation Object Implementation (Week 1-2)
+**Tasks:**
+- [ ] Design invocation object lifetime model
+- [ ] Implement NSInvocation equivalent (argument storage, selector, target)
+- [ ] Argument marshalling (type-safe packing/unpacking)
+- [ ] Return value handling
+- [ ] Invocation rewriting API (change target, args, selector)
+- [ ] Memory safety guarantees (no leaks, no double-frees)
+
+**Deliverables:**
+- Invocation struct with complete API
+- Argument marshalling tests
+- Return value tests
+- Rewriting tests
+- MIRI validation
+
+**Challenges:**
+- Lifetime management (user code may store invocations)
+- Type-unsafe argument packing (void* everywhere)
+- Alignment requirements
+- Return value size variability
+
+#### 4a.2: Four-Stage Forwarding Pipeline (Week 2-3)
+**Tasks:**
+- [ ] Implement forwardingTargetForSelector: (fast redirect)
+- [ ] Implement methodSignatureForSelector: (signature lookup)
+- [ ] Implement forwardInvocation: (full invocation manipulation)
+- [ ] Implement doesNotRecognizeSelector: (fatal error)
+- [ ] Stage transition logic (nil checks, fallthrough)
+- [ ] Error handling at each stage
+
+**Deliverables:**
+- Complete forwarding pipeline
+- Stage-specific tests
+- Error path tests
+- Integration tests (all stages together)
+
+**Success Criteria per Stage:**
+- forwardingTargetForSelector: < 100ns overhead
+- methodSignatureForSelector: < 50ns (cached)
+- forwardInvocation: < 500ns total
+- doesNotRecognizeSelector: clear error messages
+
+#### 4a.3: Invocation Pooling and Optimization (Week 3-4)
+**Tasks:**
+- [ ] Design invocation object pool
+- [ ] Implement pool allocation/deallocation
+- [ ] Benchmark pool vs direct allocation
+- [ ] Thread-local pools for contention reduction
+- [ ] Pool sizing heuristics
+- [ ] Fallback to direct allocation if pool exhausted
+
+**Deliverables:**
+- Invocation pool implementation
+- Benchmarks (pool vs direct)
+- Thread-safety tests
+- Pool exhaustion handling
+
+**Metrics:**
+| Operation | Without Pool | With Pool | Target |
+|-----------|--------------|-----------|--------|
+| Invocation creation | ~300ns | ~100ns | < 150ns |
+| Invocation free | ~200ns | ~50ns | < 100ns |
+| Full forwarding | ~800ns | ~400ns | < 500ns |
+
+#### 4a.4: Proxy Infrastructure (Week 4)
+**Tasks:**
+- [ ] Base proxy class (forwards all messages)
+- [ ] Transparent proxy (preserves object identity)
+- [ ] Logging proxy (instrumentation)
+- [ ] Remote proxy (RPC foundation)
+- [ ] Proxy composition (multiple proxies in chain)
+- [ ] Proxy bypass optimization (avoid forwarding known methods)
+
+**Deliverables:**
+- Proxy base classes
+- Example proxies (logging, remote, etc.)
+- Proxy composition tests
+- Performance benchmarks
+
+#### 4a.5: Comprehensive Testing (Week 5)
+**Tasks:**
+- [ ] Unit tests for each forwarding stage
+- [ ] Integration tests (full pipeline)
+- [ ] Proxy tests (all proxy types)
+- [ ] Performance regression tests
+- [ ] Stress tests (heavy proxy usage, deep forwarding chains)
+- [ ] MIRI validation (no UB in forwarding paths)
+- [ ] Fuzzing (invalid invocations, malformed signatures)
+
+**Deliverables:**
+- Comprehensive test suite
+- Performance benchmarks
+- Stress test results
+- MIRI validation report
+- Fuzzing results
+
+**Success Criteria:**
+- [ ] All four forwarding stages implemented
+- [ ] Invocation pooling operational
+- [ ] Fast forwarding < 100ns
+- [ ] Full forwarding < 500ns
+- [ ] Proxy overhead < 2x direct call
+- [ ] Zero memory leaks (valgrind clean)
+- [ ] All tests pass (unit + integration + stress)
+- [ ] MIRI passes with strict provenance
+- [ ] Fuzzing finds no crashes
+
+**Test Requirements:**
+- 50+ unit tests (forwarding stages, invocations, proxies)
+- 20+ integration tests (end-to-end workflows)
+- 10+ stress tests (heavy usage, edge cases)
+- Performance benchmarks for all operations
+- MIRI validation on all forwarding paths
+- Fuzzing campaign (100k+ iterations)
+
+**Deliverables:**
+- Production-ready forwarding system
+- Invocation object pool
+- Proxy infrastructure
+- Comprehensive test suite
+- Performance analysis report
+- Documentation (forwarding guide, proxy examples)
+
+---
+
+### Phase 4b: Runtime Introspection & Manipulation APIs - PLANNED
+
+**Goal:** Complete runtime reflection and dynamic manipulation
+
+**Duration:** 3-4 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 4a (forwarding complete)
+
+**Problem Statement:**
+Runtime introspection is mentioned but not implemented. This is a core capability—exposing class structure, method enumeration, protocol queries, and dynamic class creation. Required for debugging tools, serialization, testing frameworks, and dynamic language features.
+
+**Scope:**
+
+#### 4b.1: Class Introspection (Week 1)
+**Tasks:**
+- [ ] Enumerate all classes (class registry query)
+- [ ] Query class metadata (name, superclass, size, flags)
+- [ ] List instance variables (names, types, offsets)
+- [ ] Query class hierarchy (all superclasses)
+- [ ] Check class relationships (is subclass of)
+- [ ] Get class from string name
+
+**Deliverables:**
+- Class introspection API
+- Class enumeration tests
+- Hierarchy query tests
+- Documentation
+
+**API Surface:**
+```rust
+// Query all classes
+fn all_classes() -> Vec<Class>;
+
+// Class metadata
+fn class_name(class: &Class) -> &str;
+fn superclass(class: &Class) -> Option<Class>;
+fn instance_size(class: &Class) -> usize;
+
+// Hierarchy
+fn class_hierarchy(class: &Class) -> Vec<Class>;
+fn is_subclass(child: &Class, parent: &Class) -> bool;
+
+// Lookup
+fn class_from_name(name: &str) -> Option<Class>;
+```
+
+#### 4b.2: Method Introspection (Week 1-2)
+**Tasks:**
+- [ ] Enumerate instance methods
+- [ ] Enumerate class methods
+- [ ] Query method signatures (type encoding)
+- [ ] Get method implementation pointer
+- [ ] Check method existence
+- [ ] Find method in hierarchy (which class provides it)
+
+**Deliverables:**
+- Method introspection API
+- Method enumeration tests
+- Signature parsing tests
+- Documentation
+
+**API Surface:**
+```rust
+// Method enumeration
+fn instance_methods(class: &Class) -> Vec<Method>;
+fn class_methods(class: &Class) -> Vec<Method>;
+
+// Method metadata
+fn method_name(method: &Method) -> &str;
+fn method_signature(method: &Method) -> &str;
+fn method_implementation(method: &Method) -> IMP;
+
+// Queries
+fn has_method(class: &Class, selector: &Selector) -> bool;
+fn method_provider(class: &Class, selector: &Selector) -> Option<Class>;
+```
+
+#### 4b.3: Protocol Introspection (Week 2)
+**Tasks:**
+- [ ] Enumerate all protocols
+- [ ] Query protocol requirements (required/optional methods)
+- [ ] Check protocol conformance
+- [ ] List adopted protocols for class
+- [ ] Query protocol inheritance
+- [ ] Validate conformance at runtime
+
+**Deliverables:**
+- Protocol introspection API
+- Protocol query tests
+- Conformance validation tests
+- Documentation
+
+**API Surface:**
+```rust
+// Protocol enumeration
+fn all_protocols() -> Vec<Protocol>;
+fn adopted_protocols(class: &Class) -> Vec<Protocol>;
+
+// Protocol metadata
+fn protocol_name(protocol: &Protocol) -> &str;
+fn required_methods(protocol: &Protocol) -> Vec<Selector>;
+fn optional_methods(protocol: &Protocol) -> Vec<Selector>;
+
+// Conformance
+fn conforms_to(class: &Class, protocol: &Protocol) -> bool;
+fn validate_conformance(class: &Class, protocol: &Protocol) -> Result<()>;
+```
+
+#### 4b.4: Dynamic Class Creation (Week 2-3)
+**Tasks:**
+- [ ] Allocate new class at runtime
+- [ ] Add methods dynamically
+- [ ] Add instance variables dynamically
+- [ ] Set superclass
+- [ ] Add protocol conformance
+- [ ] Register class (make visible to runtime)
+- [ ] Destroy class (cleanup)
+
+**Deliverables:**
+- Dynamic class API
+- Class creation tests
+- Method/ivar addition tests
+- Registration tests
+- Documentation
+
+**API Surface:**
+```rust
+// Class creation
+fn allocate_class(name: &str, superclass: Option<&Class>) -> ClassBuilder;
+
+// ClassBuilder API
+impl ClassBuilder {
+    fn add_method(&mut self, selector: Selector, imp: IMP) -> &mut Self;
+    fn add_ivar(&mut self, name: &str, size: usize, alignment: usize) -> &mut Self;
+    fn add_protocol(&mut self, protocol: &Protocol) -> &mut Self;
+    fn register(self) -> Result<Class>;
+}
+
+// Class destruction
+fn destroy_class(class: Class) -> Result<()>;
+```
+
+#### 4b.5: Method Swizzling Safety (Week 3-4)
+**Tasks:**
+- [ ] Safe swizzle API (prevent common bugs)
+- [ ] Swizzle guards (prevent swizzling critical methods)
+- [ ] Swizzle tracking (record all swizzles)
+- [ ] Unswizzle capability (restore original)
+- [ ] Thread-safe swizzling
+- [ ] Swizzle validation (type signature compatibility)
+
+**Deliverables:**
+- Safe swizzling API
+- Swizzle tracking system
+- Unswizzle tests
+- Thread-safety tests
+- Documentation (swizzling best practices)
+
+**API Surface:**
+```rust
+// Swizzle methods
+fn swizzle_method(
+    class: &Class,
+    original: Selector,
+    replacement: Selector,
+) -> Result<SwizzleGuard>;
+
+// SwizzleGuard (RAII unswizzle)
+impl Drop for SwizzleGuard {
+    fn drop(&mut self) {
+        // Restore original method
+    }
+}
+
+// Swizzle queries
+fn is_swizzled(class: &Class, selector: Selector) -> bool;
+fn original_implementation(class: &Class, selector: Selector) -> Option<IMP>;
+```
+
+#### 4b.6: Integration and Testing (Week 4)
+**Tasks:**
+- [ ] Integration tests (introspection + manipulation together)
+- [ ] Example use cases (serialization, mocking, debugging)
+- [ ] Performance benchmarks (introspection overhead)
+- [ ] MIRI validation
+- [ ] Documentation (API guide, examples, best practices)
+
+**Deliverables:**
+- Integration test suite
+- Example applications
+- Performance benchmarks
+- API documentation
+- Best practices guide
+
+**Success Criteria:**
+- [ ] All introspection APIs implemented
+- [ ] Dynamic class creation works
+- [ ] Safe swizzling operational
+- [ ] Introspection overhead < 1μs
+- [ ] All tests pass (50+ new tests)
+- [ ] MIRI validation passes
+- [ ] Zero memory leaks
+- [ ] Comprehensive documentation
+
+**Test Requirements:**
+- 30+ unit tests (introspection APIs)
+- 20+ integration tests (dynamic workflows)
+- 10+ example applications
+- Performance benchmarks
+- MIRI validation
+- Thread-safety tests (concurrent introspection)
+
+**Deliverables:**
+- Complete introspection API
+- Dynamic class creation system
+- Safe swizzling infrastructure
+- Test suite
+- Documentation
+- Example applications
+
+---
+
+### Phase 4c: Arena Lifecycle Management & Memory Optimization - PLANNED
+
+**Goal:** Formalize arena lifetimes and optimize memory usage
+
+**Duration:** 2-3 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 4b (introspection complete)
+
+**Problem Statement:**
+Arena allocation is implemented but lifecycle management is informal. Need clear ownership semantics, leak prevention, and optimization for common allocation patterns. Memory efficiency directly impacts performance at scale.
+
+**Scope:**
+
+#### 4c.1: Arena Lifetime Formalization (Week 1)
+**Tasks:**
+- [ ] Document arena ownership model
+- [ ] Define arena scope rules (global vs scoped)
+- [ ] Implement arena RAII guards (auto-cleanup)
+- [ ] Add arena leak detection (debug mode)
+- [ ] Validate arena usage patterns in codebase
+- [ ] Refactor unclear arena lifetimes
+
+**Deliverables:**
+- Arena lifetime documentation
+- RAII arena guards
+- Leak detection tool
+- Refactored arena usage
+- Lifetime validation tests
+
+**Ownership Rules:**
+- Global arena: Static lifetime, never freed
+- Scoped arena: Bound to scope, freed on drop
+- Thread-local arena: Per-thread, freed on thread exit
+- Temporary arena: Explicit create/destroy
+
+#### 4c.2: Arena Performance Optimization (Week 1-2)
+**Tasks:**
+- [ ] Benchmark allocation patterns (size distribution)
+- [ ] Optimize bump allocator (alignment, padding)
+- [ ] Implement size classes for common allocations
+- [ ] Add arena reuse (reset instead of free)
+- [ ] Reduce allocation overhead (inline fast paths)
+- [ ] Profile memory usage in real workloads
+
+**Deliverables:**
+- Allocation pattern analysis
+- Optimized bump allocator
+- Size class implementation
+- Arena reuse system
+- Performance benchmarks
+
+**Metrics:**
+| Operation | Before | Target | Method |
+|-----------|--------|--------|--------|
+| Global allocation | ~7-8ns | < 5ns | criterion |
+| Scoped allocation | ~2-3ns | < 2ns | criterion |
+| Arena reset | Unknown | < 10ns | criterion |
+| Memory overhead | Unknown | < 10% | profiling |
+
+#### 4c.3: Memory Leak Prevention (Week 2)
+**Tasks:**
+- [ ] Implement arena usage tracking (debug mode)
+- [ ] Add allocation stack traces (when enabled)
+- [ ] Create arena leak detector
+- [ ] Valgrind integration tests
+- [ ] Address sanitizer (ASAN) validation
+- [ ] Document common leak patterns and prevention
+
+**Deliverables:**
+- Arena leak detector
+- Stack trace support (debug)
+- Valgrind/ASAN tests
+- Leak prevention guide
+- All leaks fixed
+
+#### 4c.4: Thread-Local Arena Optimization (Week 2-3)
+**Tasks:**
+- [ ] Implement thread-local arena pools
+- [ ] Reduce cross-thread contention
+- [ ] Benchmark thread-local vs global
+- [ ] Add thread-local arena API
+- [ ] Migrate hot paths to thread-local
+- [ ] Validate thread-safety
+
+**Deliverables:**
+- Thread-local arena system
+- Contention reduction benchmarks
+- Thread-safety tests
+- Migration guide
+
+#### 4c.5: Integration and Validation (Week 3)
+**Tasks:**
+- [ ] Run full benchmark suite
+- [ ] Validate all arena lifetimes correct
+- [ ] Zero leaks in valgrind
+- [ ] MIRI validation passes
+- [ ] Performance regression tests
+- [ ] Document arena best practices
+
+**Success Criteria:**
+- [ ] Global allocation < 5ns
+- [ ] Scoped allocation < 2ns
+- [ ] Zero memory leaks (valgrind clean)
+- [ ] Arena overhead < 10%
+- [ ] All tests pass
+- [ ] MIRI validation passes
+- [ ] Comprehensive documentation
+
+**Test Requirements:**
+- 20+ arena lifetime tests
+- 10+ leak detection tests
+- Thread-safety tests
+- Performance benchmarks
+- Valgrind validation
+- ASAN validation
+- MIRI validation
+
+**Deliverables:**
+- Formalized arena lifetime model
+- Optimized arena allocator
+- Leak prevention system
+- Thread-local arena support
+- Test suite
+- Documentation (arena usage guide)
+
+---
+
+## LANGUAGE PHASES (OxideX)
+
+**Prerequisites:** Runtime Phase 4c COMPLETE
+
+**Rationale:**
+- Language compiles to runtime calls—runtime must be stable
+- Performance regressions in runtime propagate to language
+- API changes in runtime break codegen
+- Cannot finalize language semantics until runtime semantics finalized
+
+---
+
+### Phase 5: Language Frontend (Lexer & Parser) - PLANNED
+
+**Goal:** Parse OxideX source to typed AST
+
+**Duration:** 7-10 weeks
+**Priority:** HIGH (once runtime complete)
+**Dependencies:** Phase 4c (runtime complete)
+
+**Scope:**
+
+#### 5.1: Lexer Implementation (Week 1-3)
+**Tasks:**
+- [ ] Token definitions (keywords, operators, literals)
+- [ ] Lexer state machine
+- [ ] String interpolation parsing
+- [ ] Comment handling (line, block, doc comments)
+- [ ] Error recovery (skip to next statement)
+- [ ] Source location tracking (Span)
+- [ ] Unicode support
+- [ ] Numeric literal parsing (int, float, hex, binary)
+
+**Deliverables:**
+- Lexer API (`lex(source) -> Result<Vec<Token>>`)
+- Token types
+- Error types
+- Comprehensive lexer tests
+- Benchmark suite
+
+**Success Criteria:**
+- Tokenizes all language constructs
+- Handles malformed input gracefully
+- Performance > 100k LOC/sec
+- Clear error messages with spans
+- 100+ lexer tests passing
+
+#### 5.2: Parser Implementation (Week 3-7)
+**Tasks:**
+- [ ] AST node definitions
+- [ ] Recursive descent parser
+- [ ] Precedence climbing (expression parsing)
+- [ ] Error recovery (synchronization points)
+- [ ] Source span preservation (all nodes)
+- [ ] Desugaring (syntactic sugar → core forms)
+- [ ] Operator precedence table
+- [ ] Statement parsing
+- [ ] Expression parsing
+- [ ] Pattern parsing
+
+**Deliverables:**
+- Parser API (`parse(tokens) -> Result<AST>`)
+- Complete AST types
+- Parser combinator library (optional)
+- Comprehensive parser tests
+- Benchmark suite
+
+**Success Criteria:**
+- Parses all language constructs
+- Clear error messages
+- Performance > 50k LOC/sec
+- Recovers from multiple errors
+- Preserves source spans
+- 200+ parser tests passing
+
+#### 5.3: Integration and Testing (Week 7-10)
+**Tasks:**
+- [ ] End-to-end lexer + parser tests
+- [ ] Error reporting tests
+- [ ] Pretty-printer (AST → source)
+- [ ] Parser fuzzing
+- [ ] Performance benchmarks
+- [ ] Example programs (parse successful)
+- [ ] Documentation (grammar specification)
+
+**Deliverables:**
+- Integration test suite
+- Pretty-printer
+- Fuzzing harness
+- Performance analysis
+- Grammar documentation
+
+**Success Criteria:**
+- All example programs parse
+- Fuzzing finds no crashes (100k iterations)
+- Round-trip (parse → pretty-print → parse) works
+- Performance targets met
+- Comprehensive documentation
+
+**Total Duration:** 7-10 weeks
+
+---
+
+### Phase 6: Type Checker - PLANNED
+
+**Goal:** Type inference and validation
 
 **Duration:** 8-11 weeks
+**Priority:** HIGH
+**Dependencies:** Phase 5 (parser complete)
 
 **Scope:**
-- Type representation
-- Hindley-Milner inference
-- Constraint solving
-- Protocol conformance
+
+#### 6.1: Type Representation (Week 1-2)
+**Tasks:**
+- [ ] Type definitions (primitives, enums, structs, classes, protocols, generics)
+- [ ] Type constructors (generic instantiation)
+- [ ] Constraint representation
+- [ ] Type substitution
+- [ ] Type pretty-printing
+- [ ] Type equality checking
+- [ ] Type unification
+
+**Deliverables:**
+- Type system core
+- Type equality tests
+- Unification tests
+- Documentation
+
+#### 6.2: Type Inference Engine (Week 2-7)
+**Tasks:**
+- [ ] Hindley-Milner inference
+- [ ] Constraint generation (AST → constraints)
+- [ ] Constraint solving
+- [ ] Generalization and instantiation
+- [ ] Protocol constraint checking
+- [ ] Occurs check (prevent infinite types)
+- [ ] Let-polymorphism
+- [ ] Bidirectional type checking
+
+**Deliverables:**
+- Inference API
+- Constraint solver
+- Type error reporting
+- Inference tests
+
+**Success Criteria:**
+- Infers types correctly (no false positives)
+- Reports clear type errors
+- Performance > 50k LOC/sec
+- Handles complex generic code
+
+#### 6.3: Validation and Checking (Week 7-11)
+**Tasks:**
+- [ ] Exhaustiveness checking (match expressions)
+- [ ] Mutability checking (let vs let mut)
+- [ ] Protocol conformance validation
+- [ ] Generic constraint verification
+- [ ] Lifetime analysis (basic)
+- [ ] Dead code detection
+- [ ] Unused variable warnings
+- [ ] Type cast validation
+
+**Deliverables:**
+- Validation passes
+- Comprehensive error messages
+- Integration tests
+- Documentation
+
+**Success Criteria:**
+- All validation checks implemented
+- Clear, actionable error messages
+- Performance targets met
+- 300+ type checker tests passing
+
+**Total Duration:** 8-11 weeks
 
 ---
 
-### Phase 6: Code Generation (Planned)
+### Phase 7: Code Generation - PLANNED
 
-**Crate:** `oxidex-codegen`
+**Goal:** Lower AST to runtime calls
 
 **Duration:** 5-7 weeks
+**Priority:** HIGH
+**Dependencies:** Phase 6 (type checker complete)
 
 **Scope:**
-- AST lowering
-- Optimization passes
+
+#### 7.1: AST Lowering (Week 1-4)
+**Tasks:**
+- [ ] Method calls → `objc_msgSend`
+- [ ] Class definitions → runtime registration
+- [ ] Protocol conformance → runtime metadata
+- [ ] Generic monomorphization
+- [ ] Enum lowering (tagged unions)
+- [ ] Pattern match compilation
+- [ ] String interpolation lowering
+- [ ] Closure capture lowering
+
+**Deliverables:**
+- Lowering passes
 - Runtime call generation
+- Metadata emission
+- Lowering tests
+
+#### 7.2: Optimization (Week 4-7)
+**Tasks:**
+- [ ] Dead code elimination
+- [ ] Constant folding
+- [ ] Inline expansion (`@inline`)
+- [ ] Static dispatch where possible
+- [ ] Selector caching
+- [ ] Devirtualization (protocol → concrete type)
+- [ ] Loop optimizations
+- [ ] Common subexpression elimination
+
+**Deliverables:**
+- Optimization passes
+- Performance benchmarks
+- Before/after comparisons
+- Documentation
+
+**Success Criteria:**
+- Generated code matches hand-written
+- Zero overhead for static dispatch
+- Minimal overhead for dynamic dispatch
+- Optimizations measurably improve performance
+- 100+ codegen tests passing
+
+**Total Duration:** 5-7 weeks
 
 ---
 
-### Phase 7: Interpreter (Planned)
+### Phase 8: Interpreter - PLANNED
 
-**Crate:** `oxidex-interpreter`
+**Goal:** Direct AST execution (REPL mode)
 
 **Duration:** 5-6 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 7 (codegen complete)
 
 **Scope:**
-- AST evaluation
-- Environment management
-- REPL implementation
+
+#### 8.1: Evaluation Engine (Week 1-4)
+**Tasks:**
+- [ ] AST walker
+- [ ] Environment (scope) management
+- [ ] Value representation
+- [ ] Built-in functions
+- [ ] Error handling and recovery
+- [ ] Stack trace generation
+- [ ] Runtime type checking
+
+**Deliverables:**
+- Interpreter core
+- Evaluation tests
+- Error reporting
+- Documentation
+
+#### 8.2: REPL Implementation (Week 4-6)
+**Tasks:**
+- [ ] Read-eval-print loop
+- [ ] Command history (readline integration)
+- [ ] Tab completion
+- [ ] Multi-line input
+- [ ] Help system
+- [ ] REPL-specific commands (:type, :info, etc.)
+- [ ] Pretty-printing results
+
+**Deliverables:**
+- Interactive REPL
+- User-friendly interface
+- Quick startup time
+- Documentation
+
+**Success Criteria:**
+- REPL startup < 100ms
+- Interactive latency < 50ms
+- Can execute all language features
+- Helpful error messages
+- 50+ interpreter tests passing
+
+**Total Duration:** 5-6 weeks
 
 ---
 
-### Phase 8: Bytecode (Planned)
+### Phase 9: Bytecode Compiler and VM - PLANNED
 
-**Crate:** `oxidex-bytecode`
+**Goal:** Portable bytecode execution
 
 **Duration:** 9-11 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 8 (interpreter complete)
 
 **Scope:**
-- Instruction set design
+
+#### 9.1: Instruction Set
+
+**Tasks:**
+- [ ] Define instruction set architecture
+- [ ] Instruction encoding (variable-length if needed)
+- [ ] Operand types and encoding
+- [ ] Stack manipulation instructions
+- [ ] Control flow instructions
+- [ ] Message sending instructions
+- [ ] Object creation instructions
+- [ ] Metadata access instructions
+
+**Deliverables:**
+- Instruction set specification
+- Encoding format documentation
+- Instruction reference manual
+
+#### 9.2: Bytecode Compiler (Week 2-6)
+**Tasks:**
+- [ ] AST → bytecode translation
+- [ ] Control flow graph construction
+- [ ] Register allocation
+- [ ] Constant pool management
+- [ ] Jump target resolution
+- [ ] Debug info generation (line number table)
+- [ ] Optimization passes (peephole, dead code)
+- [ ] Bytecode verification
+
+**Deliverables:**
 - Bytecode compiler
-- Virtual machine
+- Constant pool emitter
+- Debug info generator
+- Verification pass
+- Compiler tests
+
+#### 9.3: Virtual Machine (Week 5-9)
+**Tasks:**
+- [ ] VM core (fetch-decode-execute loop)
+- [ ] Value stack management
+- [ ] Call stack management
+- [ ] Garbage collection integration
+- [ ] Exception handling
+- [ ] Runtime bridge (call OxideC runtime)
+- [ ] JIT entry points (preparation for Phase 10)
+- [ ] Platform-specific optimizations
+
+**Deliverables:**
+- Bytecode VM
+- Execution engine
+- Debugger integration
+- Performance benchmarks
+- VM tests
+
+**Success Criteria:**
+- VM executes all bytecode correctly
+- Bytecode execution 10-50x faster than interpreter
+- Memory overhead < 2x AST size
+- Startup time < 50ms
+- 100+ bytecode tests passing
+
+**Total Duration:** 9-11 weeks
 
 ---
 
-### Phase 9: JIT (Planned)
+### Phase 10: JIT Compilation - PLANNED
 
-**Crate:** `oxidex-jit`
+**Goal:** Hot path optimization at runtime
 
 **Duration:** 6-9 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 9 (bytecode complete)
 
 **Scope:**
-- Hot path detection
-- JIT compilation
-- Code cache management
+
+#### 10.1: Hot Path Detection (Week 1-2)
+**Tasks:**
+- [ ] Execution profiling (call counting, loop detection)
+- [ ] Hot threshold tuning
+- [ ] Type feedback collection
+- [ ] Polymorphism detection
+- [ ] Inline cache integration
+- [ ] Profiling overhead minimization
+
+**Deliverables:**
+- Profiling infrastructure
+- Hot path detection heuristics
+- Type feedback system
+- Performance analysis
+
+#### 10.2: JIT Compiler (Week 2-6)
+**Tasks:**
+- [ ] Code generation backend (Cranelift or LLVM)
+- [ ] Tiered compilation (baseline → optimized)
+- [ ] Inline caching (type-based dispatch)
+- [ ] Specialization (monomorphic paths)
+- [ ] Guard generation (deoptimization)
+- [ ] Register allocation
+- [ ] Instruction selection
+- [ ] Code emission
+
+**Deliverables:**
+- JIT compiler implementation
+- Code generation pipeline
+- Optimization passes
+- Compiler tests
+
+#### 10.3: Code Cache Management (Week 6-9)
+**Tasks:**
+- [ ] Code cache design (LRU, size-based eviction)
+- [ ] Native code memory management
+- [ ] Cache invalidation (type changes, invalidations)
+- [ ] Deoptimization infrastructure
+- [ ] On-stack replacement (OSI)
+- [ ] Cache warmup strategies
+- [ ] Memory overhead tracking
+
+**Deliverables:**
+- Code cache system
+- Deoptimization runtime
+- Cache metrics and tuning
+- Integration tests
+
+**Success Criteria:**
+- JIT compiles hot methods successfully
+- JIT code 5-20x faster than bytecode
+- Compilation pause < 100ms
+- Memory overhead < 50MB for typical workloads
+- Deoptimization works correctly
+- 50+ JIT tests passing
+
+**Total Duration:** 6-9 weeks
 
 ---
 
-### Phase 10: AOT (Planned)
+### Phase 11: AOT Compilation - PLANNED
 
-**Crate:** `oxidex-aot`
+**Goal:** Native binary compilation
 
 **Duration:** 7-10 weeks
+**Priority:** MEDIUM
+**Dependencies:** Phase 7 (codegen complete)
 
 **Scope:**
-- Whole-program analysis
-- Native code generation
+
+#### 11.1: Whole-Program Analysis (Week 1-3)
+**Tasks:**
+- [ ] Module dependency resolution
+- [ ] Dead code elimination
+- [ ] Devirtualization (where safe)
+- [ ] Inline expansion (cross-module)
+- [ ] Type-based optimization
+- [ ] Specialization (monomorphic protocols)
+- [ ] Link-time optimization (LTO) integration
+
+**Deliverables:**
+- Whole-program analysis passes
+- Optimization pipeline
+- Analysis tests
+
+#### 11.2: Native Code Generation (Week 3-7)
+**Tasks:**
+- [ ] LLVM/Cranelift backend integration
+- [ ] Runtime call generation
+- [ ] Metadata emission (for reflection)
+- [ ] Static initialization code
+- [ ] Entry point generation
+- [ ] Library linkage
+- [ ] Platform-specific code (if needed)
+- [ ] Optimization tuning
+
+**Deliverables:**
+- AOT compiler
+- Code generation backend
+- Native binary output
+- Compiler tests
+
+#### 11.3: Linker Integration (Week 7-10)
+**Tasks:**
+- [ ] Object file generation
+- [ ] Symbol resolution
+- [ ] Runtime library linking
+- [ ] Static vs dynamic linking
+- [ ] Strip and optimization
+- [ ] Cross-compilation support
+- [ ] Build system integration
+
+**Deliverables:**
 - Linker integration
+- Build pipeline
+- Binary packaging
+- Deployment tools
+
+**Success Criteria:**
+- AOT compilation produces working binaries
+- AOT code within 2x of Rust performance
+- Startup time < 10ms
+- Binary size reasonable (< 5MB for hello world)
+- 30+ AOT tests passing
+
+**Total Duration:** 7-10 weeks
 
 ---
 
-### Phase 11: Standard Library (Planned)
+### Phase 12: Standard Library - PLANNED
 
-**Crate:** `oxidex-std`
+**Goal:** Core language library
 
 **Duration:** 12-16 weeks
+**Priority:** HIGH (blocks real-world use)
+**Dependencies:** Phase 8 (interpreter complete, for testing)
 
 **Scope:**
-- Core types
-- Collections
-- I/O operations
-- Concurrency primitives
+
+#### 12.1: Core Types (Week 1-4)
+**Tasks:**
+- [ ] Option<T> and Result<T, E>
+- [ ] String implementation (Unicode-aware)
+- [ ] Collection interfaces (Iterable, Comparable, etc.)
+- [ ] Numeric types and operations
+- [ ] Boolean operations
+- [ ] Unit type (Void)
+- [ ] Type conversion utilities
+
+**Deliverables:**
+- Core type implementations
+- Comprehensive tests
+- Documentation
+
+#### 12.2: Collections (Week 3-8)
+**Tasks:**
+- [ ] Array<T> (dynamic array)
+- [ ] Dict<K, V> (hash map)
+- [ ] Set<T> (hash set)
+- [ ] List<T> (linked list)
+- [ ] Queue<T> and Stack<T>
+- [ ] Iterators and lazy evaluation
+- [ ] Collection algorithms (map, filter, reduce)
+- [ ] Performance optimization
+
+**Deliverables:**
+- Collection implementations
+- Algorithm library
+- Performance benchmarks
+- Tests and documentation
+
+#### 12.3: I/O Operations (Week 7-11)
+**Tasks:**
+- [ ] File I/O (read, write, seek)
+- [ ] Standard I/O (stdin, stdout, stderr)
+- [ ] Path manipulation
+- [ ] File system operations
+- [ ] Buffered I/O
+- [ ] Stream abstractions
+- [ ] Text I/O (encoding handling)
+- [ ] Error handling
+
+**Deliverables:**
+- I/O library
+- File system interface
+- Stream abstractions
+- Tests and documentation
+
+#### 12.4: Concurrency Primitives (Week 10-14)
+**Tasks:**
+- [ ] Thread abstraction
+- [ ] Mutex and RwLock
+- [ ] Condition variables
+- [ ] Channels (message passing)
+- [ ] Async/await runtime
+- [ ] Task scheduling
+- [ ] Timer and sleep
+- [ ] Atomic operations
+
+**Deliverables:**
+- Concurrency library
+- Async runtime
+- Synchronization primitives
+- Tests and documentation
+
+#### 12.5: Additional Modules (Week 13-16)
+**Tasks:**
+- [ ] Text processing (regex, parsing)
+- [ ] JSON serialization
+- [ ] HTTP client (basic)
+- [ ] Date and time
+- [ ] Math library
+- [ ] Debugging and logging
+- [ ] Testing framework
+- [ ] Benchmarking tools
+
+**Deliverables:**
+- Additional standard modules
+- Testing infrastructure
+- Documentation
+- Examples
+
+**Success Criteria:**
+- All standard library modules working
+- Comprehensive documentation
+- 200+ stdlib tests passing
+- Performance competitive with other languages
+- Examples for all major features
+
+**Total Duration:** 12-16 weeks
 
 ---
 
-### Phase 12: Developer Tooling (Planned)
+### Phase 13: Developer Tooling - PLANNED
 
-**Crate:** `oxidex-cli`
+**Goal:** Complete development experience
 
 **Duration:** 13-18 weeks
+**Priority:** HIGH (blocks developer adoption)
+**Dependencies:** Phase 12 (stdlib complete)
 
 **Scope:**
-- CLI interface
-- Language Server (LSP)
-- Package manager
-- Documentation generator
+
+#### 13.1: CLI Interface (Week 1-4)
+**Tasks:**
+- [ ] Command-line parser
+- [ ] Build command (compile code)
+- [ ] Run command (execute programs)
+- [ ] Test command (run tests)
+- [ ] REPL command (interactive mode)
+- [ ] Package commands (init, add, update)
+- [ ] Error reporting and diagnostics
+- [ ] Configuration management
+
+**Deliverables:**
+- `oxidex` CLI tool
+- Command documentation
+- Integration tests
+
+#### 13.2: Language Server (LSP) (Week 3-8)
+**Tasks:**
+- [ ] LSP protocol implementation
+- [ ] Code completion
+- [ ] Go to definition
+- [ ] Find references
+- [ ] Symbol search
+- [ ] Diagnostics (error reporting)
+- [ ] Code actions (quick fixes)
+- [ ] Semantic highlighting
+- [ ] Signature help
+
+**Deliverables:**
+- `oxidex-lsp` server
+- Editor integration guide
+- LSP tests
+
+#### 13.3: Package Manager (Week 7-12)
+**Tasks:**
+- [ ] Package format specification
+- [ ] Dependency resolution
+- [ ] Git-based dependencies
+- [ ] Package registry (optional, or git-only)
+- [ ] Lock file management
+- [ ] Cache management
+- [ ] Workspace support
+- [ ] Private package support
+
+**Deliverables:**
+- `oxidex-pm` package manager
+- Package format docs
+- Dependency resolver tests
+
+#### 13.4: Documentation Generator (Week 11-15)
+**Tasks:**
+- [ ] Doc comment parsing
+- [ ] Markdown rendering
+- [ ] API documentation generation
+- [ ] Cross-referencing
+- [ ] Search functionality
+- [ ] Theming
+- [ ] Example extraction and testing
+- [ ] Static site generation
+
+**Deliverables:**
+- `oxidex-doc` tool
+- Documentation hosting
+- Doc comment tests
+
+#### 13.5: Additional Tools (Week 14-18)
+**Tasks:**
+- [ ] Formatter (code style)
+- [ ] Linter (code quality)
+- [ ] Benchmark runner
+- [ ] Coverage tool
+- [ ] Debugger integration
+- [ ] Profiler
+- [ ] Fuzzing tools
+- [ ] IDE plugins (VS Code, etc.)
+
+**Deliverables:**
+- Additional developer tools
+- IDE plugins
+- Tooling documentation
+
+**Success Criteria:**
+- All CLI tools working
+- LSP provides full IDE support
+- Package manager handles dependencies
+- Documentation generation works
+- 100+ tooling tests passing
+- Positive developer experience
+
+**Total Duration:** 13-18 weeks
 
 ---
+
 
 ## 5. Performance Targets
 
@@ -589,14 +1885,14 @@ struct Point {
 ### 6.2 Language Testing (OxideX)
 
 **Planned:**
-- Parser tests (Phase 4)
-- Type checker tests (Phase 5)
-- Code generation tests (Phase 6)
-- Interpreter tests (Phase 7)
-- Bytecode tests (Phase 8)
-- JIT tests (Phase 9)
-- AOT tests (Phase 10)
-- Standard library tests (Phase 11)
+- Parser tests (Phase 5)
+- Type checker tests (Phase 6)
+- Code generation tests (Phase 7)
+- Interpreter tests (Phase 8)
+- Bytecode tests (Phase 9)
+- JIT tests (Phase 10)
+- AOT tests (Phase 11)
+- Standard library tests (Phase 12)
 
 ---
 
@@ -708,12 +2004,12 @@ struct Point {
 
 **Current Status:**
 - Runtime Phase 1-3: COMPLETE (148 unit + 16 integration = 164 tests)
-- Language Phase 4-12: PLANNED
+- Language Phase 5-13: PLANNED
 
 **Immediate Priorities:**
 1. Fix selector interning cache regressions (HIGH)
 2. Optimize heap hash performance (HIGH)
-3. Begin language frontend (Phase 4)
+3. Complete runtime optimization phases (3b, 4a, 4b, 4c)
 
 **This is a multi-year project. The foundation is solid. The vision is clear. The hard work is ahead.**
 

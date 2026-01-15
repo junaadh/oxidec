@@ -15,7 +15,7 @@ A high-performance dynamic object runtime in Rust providing:
 - Full Objective-C-style forwarding and introspection
 - Manual memory management with arena allocation
 - Type-safe abstractions over zero-cost unsafe internals
-- **Status**: Phase 3 complete (238 tests, MIRI validated)
+- **Status**: Phase 3 complete (see [RFC.md](RFC.md) for test counts, MIRI validated)
 
 ### OxideX Language (PLANNED)
 A modern programming language featuring:
@@ -23,7 +23,7 @@ A modern programming language featuring:
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 4-12 planned, implementation TBD
+- **Status**: Phase 5-13 planned, runtime optimization phases (3b-4c) must complete first
 
 ## Architecture
 
@@ -33,15 +33,15 @@ The project uses a Cargo workspace with clear separation of concerns:
 oxidex/
 ├── crates/
 │   ├── oxidec/                   # Runtime (Phase 1-3: COMPLETE)
-│   ├── oxidex-syntax/            # Language syntax (Phase 4)
-│   ├── oxidex-typecheck/         # Type checker (Phase 5)
-│   ├── oxidex-codegen/           # Code generation (Phase 6)
-│   ├── oxidex-interpreter/       # Interpreter (Phase 7)
-│   ├── oxidex-bytecode/          # Bytecode VM (Phase 8)
-│   ├── oxidex-jit/               # JIT compiler (Phase 9)
-│   ├── oxidex-aot/               # AOT compiler (Phase 10)
-│   ├── oxidex-std/               # Standard library (Phase 11)
-│   └── oxidex-cli/               # CLI tools (Phase 12)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5)
+│   ├── oxidex-typecheck/         # Type checker (Phase 6)
+│   ├── oxidex-codegen/           # Code generation (Phase 7)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 8)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9)
+│   ├── oxidex-jit/               # JIT compiler (Phase 10)
+│   ├── oxidex-aot/               # AOT compiler (Phase 11)
+│   ├── oxidex-std/               # Standard library (Phase 12)
+│   └── oxidex-cli/               # CLI tools (Phase 13)
 └── docs/
     ├── language/                 # Language specification
     ├── runtime/                  # Runtime documentation
