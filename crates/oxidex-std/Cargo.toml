@@ -1,0 +1,12 @@
+[package]
+name = "oxidex-std"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxidec = { workspace = true }
+
+# TODO: Add more dependencies when implementing Phase 11

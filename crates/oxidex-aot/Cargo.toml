@@ -1,0 +1,13 @@
+[package]
+name = "oxidex-aot"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxidec = { workspace = true }
+oxidex-codegen = { path = "../oxidex-codegen" }
+
+# TODO: Add LLVM or Cranelift when implementing Phase 10

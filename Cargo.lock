@@ -260,9 +260,78 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "oxidec"
-version = "0.3.0-alpha"
+version = "0.3.0"
 dependencies = [
  "criterion",
+]
+
+[[package]]
+name = "oxidex-aot"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+ "oxidex-codegen",
+]
+
+[[package]]
+name = "oxidex-bytecode"
+version = "0.3.0"
+dependencies = [
+ "oxidex-syntax",
+]
+
+[[package]]
+name = "oxidex-cli"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+ "oxidex-aot",
+ "oxidex-bytecode",
+ "oxidex-interpreter",
+]
+
+[[package]]
+name = "oxidex-codegen"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+ "oxidex-syntax",
+ "oxidex-typecheck",
+]
+
+[[package]]
+name = "oxidex-interpreter"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+ "oxidex-syntax",
+ "oxidex-typecheck",
+]
+
+[[package]]
+name = "oxidex-jit"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+ "oxidex-bytecode",
+]
+
+[[package]]
+name = "oxidex-std"
+version = "0.3.0"
+dependencies = [
+ "oxidec",
+]
+
+[[package]]
+name = "oxidex-syntax"
+version = "0.3.0"
+
+[[package]]
+name = "oxidex-typecheck"
+version = "0.3.0"
+dependencies = [
+ "oxidex-syntax",
 ]
 
 [[package]]

@@ -1,0 +1,12 @@
+[package]
+name = "oxidex-bytecode"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxidex-syntax = { path = "../oxidex-syntax" }
+
+# TODO: Add more dependencies when implementing Phase 8

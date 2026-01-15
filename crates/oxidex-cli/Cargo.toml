@@ -1,0 +1,19 @@
+[package]
+name = "oxidex-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "ox"
+path = "src/main.rs"
+
+[dependencies]
+oxidec = { workspace = true }
+oxidex-interpreter = { path = "../oxidex-interpreter" }
+oxidex-bytecode = { path = "../oxidex-bytecode" }
+oxidex-aot = { path = "../oxidex-aot" }
+
+# TODO: Add clap for CLI parsing when implementing Phase 12

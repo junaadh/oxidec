@@ -1,19 +1,29 @@
-# OxideC: Modern Objective-C Runtime in Rust
+# OxideX: Modern Dynamic Language with Message-Based Runtime
 
-**Version:** See [Cargo.toml](Cargo.toml)
+**Version:** See workspace root [Cargo.toml](Cargo.toml)
 **Status:** See [RFC.md](RFC.md) for current phase and roadmap
 **Last Updated:** 2026-01-16
 
-You are assisting with the OxideC project—a dynamic object runtime inspired by Objective-C, redesigned for modern systems programming in Rust.
+You are assisting with the OxideX project—a modern programming language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC, a custom Objective-C-inspired runtime written in Rust.
 
 ## Project Overview
 
-OxideC is building a safe, high-performance dynamic runtime with:
+OxideX is building:
+- **OxideC Runtime** (Phase 1-3: COMPLETE) - Safe, high-performance dynamic runtime
+- **OxideX Language** (Phase 4-12: Planned) - Modern syntax with message-based semantics
+
+### OxideC Runtime
 - **Dynamic Dispatch** with late binding and method caching
 - **Memory Safety** with manual management in unsafe internals, safe public API wrapping
 - **C ABI Compatibility** for FFI and interoperability
 - **Runtime Reflection** for introspection and tooling
-- **Modern Extensions** including tagged pointers and type-aware dispatch
+- **Message Forwarding** as first-class control flow
+
+### OxideX Language
+- **Swift-inspired Syntax** with clean, modern ergonomics
+- **Rust-inspired Safety** with immutability by default
+- **Message-based Semantics** where `.method()` compiles to `objc_msgSend`
+- **Multiple Execution Modes** (interpret, bytecode, JIT, AOT)
 
 ## Architecture & Safety Model
 
@@ -57,25 +67,47 @@ The entire runtime is built on this core principle:
 - Keep documentation technical and professional
 - Use bullet points and numbered lists for clarity
 
-### Module Structure
+### Workspace Structure
 ```
-src/
-├── lib.rs              # Public API entry point
-├── error.rs            # Error types
-└── runtime/
-    ├── mod.rs          # Runtime initialization
-    ├── arena.rs        # Arena allocator
-    ├── object.rs       # Object implementation
-    ├── class.rs        # Class system
-    ├── selector.rs     # Selector interning
-    ├── dispatch.rs     # Message dispatch
-    ├── encoding.rs     # Type encoding
-    ├── message.rs      # Message arguments
-    ├── string.rs       # Runtime strings
-    ├── cache.rs        # Method caching
-    ├── category.rs     # Category support
-    ├── protocol.rs     # Protocol support
-    └── forwarding.rs   # Message forwarding
+oxidex/
+├── Cargo.toml                    # Workspace root
+├── crates/
+│   ├── oxidec/                   # Runtime (Phase 1-3: COMPLETE)
+│   │   ├── src/
+│   │   │   ├── lib.rs           # Public runtime API
+│   │   │   ├── error.rs         # Error types
+│   │   │   └── runtime/         # Core runtime modules
+│   │   ├── benches/             # Performance benchmarks
+│   │   └── tests/               # Integration tests
+│   │
+│   ├── oxidex-syntax/            # Language syntax (Phase 4)
+│   ├── oxidex-typecheck/         # Type checker (Phase 5)
+│   ├── oxidex-codegen/           # Code generation (Phase 6)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 7)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 8)
+│   ├── oxidex-jit/               # JIT compiler (Phase 9)
+│   ├── oxidex-aot/               # AOT compiler (Phase 10)
+│   ├── oxidex-std/               # Standard library (Phase 11)
+│   └── oxidex-cli/               # CLI tools (Phase 12)
+```
+
+### OxideC Runtime Modules
+```
+crates/oxidec/src/runtime/
+├── mod.rs              # Runtime initialization
+├── arena.rs            # Arena allocator
+├── object.rs           # Object implementation
+├── class.rs            # Class system
+├── selector.rs         # Selector interning
+├── dispatch.rs         # Message dispatch
+├── encoding.rs         # Type encoding
+├── message.rs          # Message arguments
+├── string.rs           # Runtime strings
+├── cache.rs            # Method caching
+├── category.rs         # Category support
+├── protocol.rs         # Protocol support
+├── forwarding.rs       # Message forwarding
+└── swizzling.rs        # Method replacement
 ```
 
 ### Documentation Requirements
@@ -109,10 +141,21 @@ src/
 - [x] Protocols
 - [x] Message forwarding (per-class and global hooks)
 - [x] Method swizzling (runtime method replacement)
-- [x] Integration tests (10 new tests)
+- [x] Integration tests (16 new tests)
 - [x] MIRI validation (all 148 unit tests pass with strict provenance)
 
-### Phase 4+: See RFC.md for full roadmap
+### Phase 4-12: Language Implementation (Planned)
+- [ ] Language frontend (syntax, parser, AST)
+- [ ] Type checker (inference, validation)
+- [ ] Code generation (AST → runtime calls)
+- [ ] Interpreter (REPL)
+- [ ] Bytecode compiler and VM
+- [ ] JIT compiler
+- [ ] AOT compiler
+- [ ] Standard library
+- [ ] CLI tools
+
+**See RFC.md for detailed phase breakdown.**
 
 ## Performance Considerations
 
@@ -141,7 +184,7 @@ All new features require:
 ### MIRI Validation
 Run MIRI before committing changes:
 ```bash
-MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" cargo +nightly miri test
+MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" cargo +nightly miri test -p oxidec
 ```
 
 All code must pass MIRI validation with strict provenance to ensure:
@@ -187,10 +230,11 @@ All code must pass MIRI validation with strict provenance to ensure:
 ## Current Context
 
 - **Edition**: 2024 (Rust stable)
-- **Target**: Systems programming, FFI compatibility
-- **Status**: Alpha 0.3 - Phase 3 Complete
-- **Next Milestone**: Phase 4 - Optimization & Performance
-- **Testing**: See [RFC.md](RFC.md) for test coverage and validation status
+- **Target**: Message-based dynamic language with systems-level performance
+- **Status**: Runtime Phase 3 Complete (Alpha 0.3), Language Phase 4-12 Planned
+- **Next Milestone**: Phase 4 - Language Frontend Implementation
+- **Testing**: 238 tests passing (148 unit + 16 integration + 74 doctests)
+- **MIRI**: All tests pass with strict provenance validation
 
 ---
 

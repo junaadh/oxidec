@@ -1,0 +1,13 @@
+[package]
+name = "oxidex-jit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxidex-bytecode = { path = "../oxidex-bytecode" }
+oxidec = { workspace = true }
+
+# TODO: Add Cranelift or LLVM when implementing Phase 9

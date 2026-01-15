@@ -1,0 +1,25 @@
+[package]
+name = "oxidec"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OxideC: A modern Objective-C inspired dynamic runtime for systems programming"
+readme = "../../README.md"
+keywords = ["objective-c", "runtime", "ffi", "dynamic", "memory"]
+categories = ["memory-management", "development-tools::ffi", "api-bindings"]
+
+[dependencies]
+# No runtime dependencies - pure std
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "arena"
+harness = false
+
+[[bench]]
+name = "string"
+harness = false

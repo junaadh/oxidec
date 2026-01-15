@@ -1,0 +1,10 @@
+[package]
+name = "oxidex-syntax"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# TODO: Add dependencies when implementing Phase 4

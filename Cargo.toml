@@ -1,25 +1,39 @@
-[package]
-name = "oxidec"
-version = "0.3.0-alpha"
+[workspace]
+resolver = "3"
+members = [
+    "crates/oxidec",
+    "crates/oxidex-syntax",
+    "crates/oxidex-typecheck",
+    "crates/oxidex-codegen",
+    "crates/oxidex-interpreter",
+    "crates/oxidex-bytecode",
+    "crates/oxidex-jit",
+    "crates/oxidex-aot",
+    "crates/oxidex-std",
+    "crates/oxidex-cli",
+]
+
+[workspace.package]
+version = "0.3.0"
 edition = "2024"
-authors = ["Junaadh <junaadh.02@icloud.com>"]
+authors = ["Junaadh"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/junaadh/oxidec"
-homepage = "https://oxidec.dev"
-description = "OxideC: A modern Objective-C inspired dynamic runtime for systems programming"
-readme = "README.md"
-keywords = ["objective-c", "runtime", "ffi", "dynamic", "memory"]
-categories = ["memory-management", "development-tools::ffi", "api-bindings"]
 
-[dependencies]
+[workspace.dependencies]
+# Runtime
+oxidec = { path = "crates/oxidec" }
 
-[dev-dependencies]
+# Language crates
+oxidex-syntax = { path = "crates/oxidex-syntax" }
+oxidex-typecheck = { path = "crates/oxidex-typecheck" }
+oxidex-codegen = { path = "crates/oxidex-codegen" }
+oxidex-interpreter = { path = "crates/oxidex-interpreter" }
+oxidex-bytecode = { path = "crates/oxidex-bytecode" }
+oxidex-jit = { path = "crates/oxidex-jit" }
+oxidex-aot = { path = "crates/oxidex-aot" }
+oxidex-std = { path = "crates/oxidex-std" }
+oxidex-cli = { path = "crates/oxidex-cli" }
+
+# External dependencies
 criterion = "0.5"
-
-[[bench]]
-name = "arena"
-harness = false
-
-[[bench]]
-name = "string"
-harness = false

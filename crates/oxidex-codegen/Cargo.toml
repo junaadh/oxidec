@@ -1,0 +1,14 @@
+[package]
+name = "oxidex-codegen"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+oxidec = { workspace = true }
+oxidex-syntax = { path = "../oxidex-syntax" }
+oxidex-typecheck = { path = "../oxidex-typecheck" }
+
+# TODO: Add more dependencies when implementing Phase 6

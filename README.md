@@ -1,17 +1,56 @@
-# OxideC
+# OxideX
 
-A modern Objective-C inspired dynamic object runtime in Rust, providing type-safe abstractions over zero-cost unsafe internals.
+A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
 **Status**: See [RFC.md](RFC.md) for roadmap status
 
 ## Overview
 
-OxideC implements a high-performance dynamic object runtime with manual memory management and compile-time safety guarantees. It combines the flexibility of Objective-C's message passing system with Rust's memory safety model.
+OxideX is a unified project with two main components:
+
+### OxideC Runtime (COMPLETE ✓)
+A high-performance dynamic object runtime in Rust providing:
+- Message-based dispatch (`objc_msgSend` semantics)
+- Full Objective-C-style forwarding and introspection
+- Manual memory management with arena allocation
+- Type-safe abstractions over zero-cost unsafe internals
+- **Status**: Phase 3 complete (238 tests, MIRI validated)
+
+### OxideX Language (PLANNED)
+A modern programming language featuring:
+- Swift-inspired syntax with clean ergonomics
+- Message-based execution where `.method()` compiles to `objc_msgSend`
+- Multiple execution modes (interpret, bytecode, JIT, AOT)
+- Rust-inspired safety with immutability by default
+- **Status**: Phase 4-12 planned, implementation TBD
 
 ## Architecture
 
-The runtime is built on a layered architecture:
+The project uses a Cargo workspace with clear separation of concerns:
+
+```
+oxidex/
+├── crates/
+│   ├── oxidec/                   # Runtime (Phase 1-3: COMPLETE)
+│   ├── oxidex-syntax/            # Language syntax (Phase 4)
+│   ├── oxidex-typecheck/         # Type checker (Phase 5)
+│   ├── oxidex-codegen/           # Code generation (Phase 6)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 7)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 8)
+│   ├── oxidex-jit/               # JIT compiler (Phase 9)
+│   ├── oxidex-aot/               # AOT compiler (Phase 10)
+│   ├── oxidex-std/               # Standard library (Phase 11)
+│   └── oxidex-cli/               # CLI tools (Phase 12)
+└── docs/
+    ├── language/                 # Language specification
+    ├── runtime/                  # Runtime documentation
+    └── examples/                 # Code examples
+```
+
+### Runtime Architecture
+
+The OxideC runtime is built on a layered architecture:
 
 - **Public API Layer**: Type-safe, validated abstractions with zero overhead
 - **Runtime Layer**: Unsafe internals with comprehensive safety documentation
@@ -82,6 +121,24 @@ The runtime is built on a layered architecture:
 - [ ] Protocol conformance validator CLI tool
 
 ## Testing
+
+```bash
+# Build entire workspace
+cargo build --workspace
+
+# Run all tests
+cargo test --workspace
+
+# Run tests for specific crate
+cargo test -p oxidec
+
+# Run benchmarks
+cargo bench -p oxidec
+
+# MIRI validation
+MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \
+    cargo +nightly miri test --workspace
+```
 
 See [RFC.md](RFC.md) for comprehensive test coverage and validation status.
 

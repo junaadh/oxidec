@@ -240,6 +240,7 @@ unsafe fn call_method_with_args(
 ///
 /// This function is unsafe because it calls arbitrary function pointers
 /// (method implementations) that must conform to the C ABI calling convention.
+#[allow(clippy::too_many_lines)]
 pub unsafe fn send_message(
     obj: &Object,
     selector: &Selector,
