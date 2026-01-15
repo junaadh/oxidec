@@ -80,11 +80,20 @@ pub enum Error {
     /// Protocol name already exists.
     ProtocolAlreadyExists,
 
+    /// Protocol already adopted by class.
+    ProtocolAlreadyAdopted,
+
     /// Missing required protocol method.
     MissingProtocolMethod {
         /// The selector that is missing
         selector: String,
     },
+
+    /// Protocol inheritance cycle detected.
+    ProtocolInheritanceCycle,
+
+    /// Method already registered in protocol.
+    ProtocolMethodAlreadyRegistered,
 }
 
 impl fmt::Display for Error {
@@ -146,8 +155,17 @@ impl fmt::Display for Error {
             Error::ProtocolAlreadyExists => {
                 write!(f, "Protocol name already exists")
             }
+            Error::ProtocolAlreadyAdopted => {
+                write!(f, "Protocol already adopted by class")
+            }
             Error::MissingProtocolMethod { selector } => {
                 write!(f, "Missing required protocol method: {selector}")
+            }
+            Error::ProtocolInheritanceCycle => {
+                write!(f, "Protocol inheritance cycle detected")
+            }
+            Error::ProtocolMethodAlreadyRegistered => {
+                write!(f, "Method already registered in protocol")
             }
         }
     }

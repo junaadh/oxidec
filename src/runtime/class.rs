@@ -22,7 +22,7 @@
 
 use crate::error::{Error, Result};
 use crate::runtime::selector::SelectorHandle;
-use crate::runtime::{RuntimeString, Selector, get_global_arena};
+use crate::runtime::{Protocol, RuntimeString, Selector, get_global_arena};
 use std::collections::HashMap;
 use std::fmt;
 use std::ptr::NonNull;
@@ -83,6 +83,9 @@ pub(crate) struct ClassInner {
     /// Categories attached to this class
     /// Protected by `RwLock` for thread-safe category addition
     pub(crate) categories: RwLock<Vec<NonNull<crate::runtime::category::CategoryInner>>>,
+    /// Protocols this class conforms to
+    /// Protected by `RwLock` for thread-safe protocol addition
+    pub(crate) protocols: RwLock<Vec<NonNull<crate::runtime::protocol::ProtocolInner>>>,
 }
 
 /// Global class registry.
@@ -279,6 +282,7 @@ impl Class {
             cache: RwLock::new(HashMap::new()),
             flags: 0,
             categories: RwLock::new(Vec::new()),
+            protocols: RwLock::new(Vec::new()),
         };
 
         // Allocate in global arena
@@ -640,6 +644,237 @@ impl Class {
         }
 
         false
+    }
+
+    /// Adds protocol conformance to this class.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - Protocol to adopt
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if successful, `Err` if protocol already adopted.
+    ///
+    /// # Thread Safety
+    ///
+    /// Multiple threads can add protocols concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Protocol};
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    /// let protocol = Protocol::new("MyProtocol", None).unwrap();
+    ///
+    /// class.add_protocol(&protocol).unwrap();
+    /// assert!(class.conforms_to(&protocol));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::ProtocolAlreadyAdopted)` if this class already
+    /// conforms to the protocol.
+    pub fn add_protocol(&self, protocol: &Protocol) -> Result<()> {
+        // SAFETY: self.inner points to valid ClassInner
+        let inner = unsafe { &*self.inner.as_ptr() };
+
+        // Check for duplicate protocol adoption
+        let protocols = inner.protocols.read().unwrap();
+        for proto_ptr in protocols.iter() {
+            if proto_ptr.as_ptr() == protocol.inner.as_ptr() {
+                return Err(Error::ProtocolAlreadyAdopted);
+            }
+        }
+        drop(protocols);
+
+        // Add protocol to class
+        {
+            let mut protocols = inner.protocols.write().unwrap();
+            protocols.push(protocol.inner);
+        }
+
+        // Invalidate method cache
+        self.invalidate_cache();
+
+        Ok(())
+    }
+
+    /// Checks if this class conforms to a protocol.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - Protocol to check
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if this class conforms to the protocol, `false` otherwise.
+    ///
+    /// # Thread Safety
+    ///
+    /// Multiple threads can check conformance concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Protocol};
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    /// let protocol = Protocol::new("MyProtocol", None).unwrap();
+    ///
+    /// assert!(!class.conforms_to(&protocol));
+    /// class.add_protocol(&protocol).unwrap();
+    /// assert!(class.conforms_to(&protocol));
+    /// ```
+    #[must_use]
+    pub fn conforms_to(&self, protocol: &Protocol) -> bool {
+        // SAFETY: self.inner points to valid ClassInner
+        let inner = unsafe { &*self.inner.as_ptr() };
+
+        // Check this class's protocols
+        let protocols = inner.protocols.read().unwrap();
+        for proto_ptr in protocols.iter() {
+            if proto_ptr.as_ptr() == protocol.inner.as_ptr() {
+                return true;
+            }
+        }
+        drop(protocols);
+
+        // Check superclasses (conformance is transitive through inheritance)
+        if let Some(superclass) = self.super_class() {
+            superclass.conforms_to(protocol)
+        } else {
+            false
+        }
+    }
+
+    /// Returns all protocols this class conforms to.
+    ///
+    /// Includes protocols from superclasses (conformance is transitive).
+    ///
+    /// # Returns
+    ///
+    /// Vector of protocols this class conforms to.
+    ///
+    /// # Thread Safety
+    ///
+    /// Multiple threads can query protocols concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Protocol};
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    /// let protocol1 = Protocol::new("Protocol1", None).unwrap();
+    /// let protocol2 = Protocol::new("Protocol2", None).unwrap();
+    ///
+    /// class.add_protocol(&protocol1).unwrap();
+    /// class.add_protocol(&protocol2).unwrap();
+    ///
+    /// let protocols = class.protocols();
+    /// assert_eq!(protocols.len(), 2);
+    /// ```
+    #[must_use]
+    pub fn protocols(&self) -> Vec<Protocol> {
+        let mut result = Vec::new();
+
+        // Add protocols from this class
+        // SAFETY: self.inner points to valid ClassInner
+        let inner = unsafe { &*self.inner.as_ptr() };
+        let protocols = inner.protocols.read().unwrap();
+        for &proto_ptr in protocols.iter() {
+            result.push(Protocol { inner: proto_ptr });
+        }
+        drop(protocols);
+
+        // Add protocols from superclasses
+        if let Some(superclass) = self.super_class() {
+            result.extend(superclass.protocols());
+        }
+
+        // Deduplicate while preserving order
+        let mut seen = std::collections::HashSet::new();
+        result.retain(|p| seen.insert(p.inner.as_ptr() as usize));
+
+        result
+    }
+
+    /// Validates that this class implements all required protocol methods.
+    ///
+    /// This is the **optional runtime validation** part of the hybrid validation
+    /// approach. It checks that the class implements all methods required by
+    /// the protocol.
+    ///
+    /// # Arguments
+    ///
+    /// * `protocol` - Protocol to validate against
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the class conforms to the protocol, `Err` if any
+    /// required methods are missing.
+    ///
+    /// # Thread Safety
+    ///
+    /// Multiple threads can validate concurrently.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Method, Protocol, RuntimeString, Selector};
+    /// use oxidec::runtime::get_global_arena;
+    /// use std::str::FromStr;
+    ///
+    /// let protocol = Protocol::new("MyProtocol", None).unwrap();
+    /// let sel = Selector::from_str("requiredMethod").unwrap();
+    /// protocol.add_required(sel.clone(), "v@:", get_global_arena()).unwrap();
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    /// class.add_protocol(&protocol).unwrap();
+    ///
+    /// // Validation will fail (method not implemented)
+    /// assert!(class.validate_protocol_conformance(&protocol).is_err());
+    ///
+    /// // Add the required method
+    /// let method = Method {
+    ///     selector: sel.clone(),
+    ///     imp: required_method_impl,
+    ///     types: RuntimeString::new("v@:", get_global_arena()),
+    /// };
+    /// class.add_method(method).unwrap();
+    ///
+    /// // Now validation passes
+    /// class.validate_protocol_conformance(&protocol).unwrap();
+    /// #
+    /// # unsafe extern "C" fn required_method_impl(
+    /// #     _self: oxidec::runtime::object::ObjectPtr,
+    /// #     _cmd: oxidec::runtime::selector::SelectorHandle,
+    /// #     _args: *const *mut u8,
+    /// #     _ret: *mut u8,
+    /// # ) {}
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::MissingProtocolMethod)` if the class doesn't implement
+    /// a required protocol method.
+    pub fn validate_protocol_conformance(&self, protocol: &Protocol) -> Result<()> {
+        // Get all required methods from protocol (including base protocols)
+        let required_methods = protocol.all_required();
+
+        // Check each required method
+        for (_hash, selector) in required_methods {
+            // Check if class has this method (walks: local → categories → superclass)
+            if self.lookup_method(&selector).is_none() {
+                return Err(Error::MissingProtocolMethod {
+                    selector: selector.name().to_string(),
+                });
+            }
+        }
+
+        Ok(())
     }
 }
 

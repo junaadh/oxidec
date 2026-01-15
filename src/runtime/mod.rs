@@ -41,6 +41,7 @@ pub mod dispatch;
 pub mod encoding;
 pub mod message;
 pub mod object;
+pub mod protocol;
 pub mod selector;
 pub mod string;
 
@@ -48,6 +49,7 @@ pub use arena::{Arena, LocalArena};
 pub use category::Category;
 pub use class::{Class, Method};
 pub use message::MessageArgs;
+pub use protocol::Protocol;
 pub use object::{Object, ObjectPtr};
 pub use selector::Selector;
 pub use string::RuntimeString;

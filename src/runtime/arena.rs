@@ -61,7 +61,7 @@
 //!
 //! ## Safe Patterns
 //!
-//! ### ✅ Correct: Create Box, then leak after CAS
+//! ### [OK] Correct: Create Box, then leak after CAS
 //! ```rust,ignore
 //! let chunk_box = Box::new(chunk);
 //! let chunk_raw = Box::into_raw(chunk_box);  // Ownership transferred to raw
@@ -78,7 +78,7 @@
 //! }
 //! ```
 //!
-//! ### ❌ WRONG: Leak first, then try to reclaim
+//! ### [WRONG] Leak first, then try to reclaim
 //! ```rust,ignore
 //! let chunk_ptr = Box::leak(Box::new(chunk));  // Mutable reference with 'static
 //!
@@ -87,7 +87,7 @@
 //!     Err(_) => {
 //!         // VIOLATION: Cannot Box::from_raw on a leaked reference!
 //!         // This causes Stacked Borrows violations.
-//!         let _ = Box::from_raw(chunk_ptr);  // ❌ UB!
+//!         let _ = Box::from_raw(chunk_ptr);  // [WRONG] UB!
 //!     }
 //! }
 //! ```
