@@ -86,6 +86,9 @@ pub(crate) struct ClassInner {
     /// Protocols this class conforms to
     /// Protected by `RwLock` for thread-safe protocol addition
     pub(crate) protocols: RwLock<Vec<NonNull<crate::runtime::protocol::ProtocolInner>>>,
+    /// Per-class forwarding hook (called when selector not found in instances)
+    /// Protected by `RwLock` for thread-safe hook access
+    pub(crate) forwarding_hook: RwLock<Option<crate::runtime::forwarding::ClassForwardingHook>>,
 }
 
 /// Global class registry.
@@ -283,6 +286,7 @@ impl Class {
             flags: 0,
             categories: RwLock::new(Vec::new()),
             protocols: RwLock::new(Vec::new()),
+            forwarding_hook: RwLock::new(None),
         };
 
         // Allocate in global arena
@@ -422,8 +426,8 @@ impl Class {
     ///
     /// # Panics
     ///
-    /// Panics if the internal `RwLock` is poisoned (which should never happen
-    /// under normal circumstances).
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     pub fn add_method(&self, method: Method) -> Result<()> {
         // SAFETY: self.inner points to valid `Class`Inner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -488,8 +492,8 @@ impl Class {
     ///
     /// # Panics
     ///
-    /// Panics if the internal `RwLock` is poisoned (which should never happen
-    /// under normal circumstances).
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn lookup_method(&self, selector: &Selector) -> Option<&Method> {
         let mut current_ptr = Some(self.inner.as_ptr());
@@ -558,8 +562,8 @@ impl Class {
     ///
     /// # Panics
     ///
-    /// Panics if the internal `RwLock` is poisoned (which should never happen
-    /// under normal circumstances).
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn lookup_imp(&self, selector: &Selector) -> Option<Imp> {
         let hash = selector.hash();
@@ -676,6 +680,11 @@ impl Class {
     ///
     /// Returns `Err(Error::ProtocolAlreadyAdopted)` if this class already
     /// conforms to the protocol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     pub fn add_protocol(&self, protocol: &Protocol) -> Result<()> {
         // SAFETY: self.inner points to valid ClassInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -727,6 +736,11 @@ impl Class {
     /// class.add_protocol(&protocol).unwrap();
     /// assert!(class.conforms_to(&protocol));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn conforms_to(&self, protocol: &Protocol) -> bool {
         // SAFETY: self.inner points to valid ClassInner
@@ -776,6 +790,11 @@ impl Class {
     /// let protocols = class.protocols();
     /// assert_eq!(protocols.len(), 2);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn protocols(&self) -> Vec<Protocol> {
         let mut result = Vec::new();
@@ -875,6 +894,190 @@ impl Class {
         }
 
         Ok(())
+    }
+
+    /// Replaces the implementation of a method with a new function pointer.
+    ///
+    /// This is the **method swizzling** operation, which allows runtime replacement
+    /// of method implementations. Common use cases:
+    ///
+    /// - Runtime patching (hotfixing)
+    /// - Debugging/profiling injection
+    /// - AOP (aspect-oriented programming)
+    /// - Testing mocks/stubs
+    ///
+    /// # Arguments
+    ///
+    /// * `selector` - The method selector to swizzle
+    /// * `new_imp` - The new implementation function pointer
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(original_imp)` - the original implementation (can be restored later).
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe:
+    /// - Acquires method table write lock
+    /// - Invalidates method cache before returning
+    /// - Atomic swap prevents race conditions
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Method, Selector, RuntimeString};
+    /// use oxidec::runtime::get_global_arena;
+    /// use std::str::FromStr;
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    /// let sel = Selector::from_str("doSomething").unwrap();
+    /// let arena = get_global_arena();
+    ///
+    /// // Add original method
+    /// let original_imp = my_original_impl;
+    /// let method = Method {
+    ///     selector: sel.clone(),
+    ///     imp: original_imp,
+    ///     types: RuntimeString::new("v@:", arena),
+    /// };
+    /// class.add_method(method).unwrap();
+    ///
+    /// // Swizzle with replacement
+    /// let replacement_imp = my_replacement_impl;
+    /// let saved_original = class.swizzle_method(&sel, replacement_imp).unwrap();
+    ///
+    /// // Now calls to doSomething invoke replacement_imp
+    /// // Can restore: class.swizzle_method(&sel, saved_original)?;
+    /// #
+    /// # unsafe extern "C" fn my_original_impl(
+    /// #     _self: oxidec::runtime::object::ObjectPtr,
+    /// #     _cmd: oxidec::runtime::selector::SelectorHandle,
+    /// #     _args: *const *mut u8,
+    /// #     _ret: *mut u8,
+    /// # ) {}
+    /// # unsafe extern "C" fn my_replacement_impl(
+    /// #     _self: oxidec::runtime::object::ObjectPtr,
+    /// #     _cmd: oxidec::runtime::selector::SelectorHandle,
+    /// #     _args: *const *mut u8,
+    /// #     _ret: *mut u8,
+    /// # ) {}
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::SelectorNotFound)` if the selector doesn't exist
+    /// in this class's method table (excluding inherited methods).
+    ///
+    /// # Safety
+    ///
+    /// The caller MUST ensure that `new_imp` has the exact same function signature
+    /// as the original implementation. Using a mismatched signature is **undefined behavior**.
+    /// This is the same as Objective-C's `method_setImplementation`.
+    ///
+    /// **Note:** Swizzling only affects the target class's method table. Inherited methods
+    /// from parent classes cannot be swizzled directly (must swizzle on the parent class).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn swizzle_method(&self, selector: &Selector, new_imp: Imp) -> Result<Imp> {
+        let hash = selector.hash();
+
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        // Lifetime: ClassInner is arena-allocated and lives for entire program duration
+        let inner = unsafe { &*self.inner.as_ptr() };
+
+        // Acquire write lock for thread-safe modification
+        let mut methods = inner.methods.write().unwrap();
+
+        // Find method in this class's method table (does not search superclass)
+        // Rationale: Swizzling should only affect this class, not parent
+        let method = methods.get_mut(&hash).ok_or(Error::SelectorNotFound)?;
+
+        // Swap implementation
+        let original_imp = method.imp;
+        method.imp = new_imp;
+
+        // Drop write lock before invalidating cache (avoid deadlock)
+        drop(methods);
+
+        // Invalidate method cache for this class
+        // This forces the next message send to re-walk the method lookup chain
+        // and find the new implementation
+        self.invalidate_cache();
+
+        Ok(original_imp)
+    }
+
+    /// Returns the hash of this class's inner pointer.
+    ///
+    /// This is used by the forwarding cache to create a unique key for
+    /// caching forwarded targets.
+    pub(crate) fn inner_hash(&self) -> u64 {
+        self.inner.as_ptr() as usize as u64
+    }
+
+    /// Sets a forwarding hook for all instances of this class.
+    ///
+    /// The hook is called when a selector is not found in any instance's class.
+    /// If it returns Some(target), the message is retried on the target.
+    ///
+    /// # Priority
+    ///
+    /// Per-object hooks > Per-class hooks > Global hooks
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe. The last hook set wins.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Selector};
+    ///
+    /// let class = Class::new_root("MyClass").unwrap();
+    ///
+    /// class.set_forwarding_hook(|obj, sel| {
+    ///     // Forward unknown messages to a proxy object
+    ///     None // Return Some(target) to forward
+    /// });
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn set_forwarding_hook(&self, hook: crate::runtime::forwarding::ClassForwardingHook) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.forwarding_hook.write().unwrap() = Some(hook);
+    }
+
+    /// Clears this class's forwarding hook.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn clear_forwarding_hook(&self) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.forwarding_hook.write().unwrap() = None;
+    }
+
+    /// Gets this class's forwarding hook (if set).
+    ///
+    /// This is used internally by the forwarding resolution system.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub(crate) fn get_forwarding_hook(&self) -> Option<crate::runtime::forwarding::ClassForwardingHook> {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.forwarding_hook.read().unwrap()
     }
 }
 

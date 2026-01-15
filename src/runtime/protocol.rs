@@ -21,7 +21,7 @@
 //!
 //! # Hybrid Validation
 //!
-//! OxideC uses a **hybrid validation approach**:
+//! `OxideC` uses a **hybrid validation approach**:
 //!
 //! ## 1. Declarative (Default)
 //! Classes declare protocol conformance without validation:
@@ -63,9 +63,9 @@ pub(crate) struct ProtocolMethod {
 pub(crate) struct ProtocolInner {
     /// Protocol name (e.g., "Copyable", "Iterable")
     name: RuntimeString,
-    /// Required methods: selector hash -> ProtocolMethod
+    /// Required methods: selector hash -> `ProtocolMethod`
     required_methods: RwLock<HashMap<u64, ProtocolMethod>>,
-    /// Optional methods: selector hash -> ProtocolMethod
+    /// Optional methods: selector hash -> `ProtocolMethod`
     optional_methods: RwLock<HashMap<u64, ProtocolMethod>>,
     /// Classes that have adopted this protocol
     adopted_classes: RwLock<Vec<NonNull<crate::runtime::class::ClassInner>>>,
@@ -176,7 +176,7 @@ impl Protocol {
         if ptr.is_null() {
             return Err(Error::OutOfMemory);
         }
-        let inner = unsafe { NonNull::new_unchecked(ptr as *mut ProtocolInner) };
+        let inner = unsafe { NonNull::new_unchecked(ptr.cast::<ProtocolInner>()) };
 
         Ok(Protocol { inner })
     }
@@ -207,6 +207,16 @@ impl Protocol {
     /// let sel = Selector::from_str("doSomething").unwrap();
     /// protocol.add_required(sel, "v@:", get_global_arena()).unwrap();
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::ProtocolMethodAlreadyRegistered)` if a method
+    /// with this selector is already registered in the protocol.
     pub fn add_required(&self, selector: Selector, types: &str, arena: &crate::runtime::Arena) -> Result<()> {
         // SAFETY: self.inner points to valid ProtocolInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -253,6 +263,16 @@ impl Protocol {
     /// let sel = Selector::from_str("optionalMethod").unwrap();
     /// protocol.add_optional(sel, "v@:", get_global_arena()).unwrap();
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::ProtocolMethodAlreadyRegistered)` if a method
+    /// with this selector is already registered in the protocol.
     pub fn add_optional(&self, selector: Selector, types: &str, arena: &crate::runtime::Arena) -> Result<()> {
         // SAFETY: self.inner points to valid ProtocolInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -309,6 +329,11 @@ impl Protocol {
     /// assert_eq!(required.len(), 1);
     /// assert_eq!(required[0].name(), "requiredMethod");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn required(&self) -> Vec<Selector> {
         // SAFETY: self.inner points to valid ProtocolInner
@@ -336,6 +361,11 @@ impl Protocol {
     /// assert_eq!(optional.len(), 1);
     /// assert_eq!(optional[0].name(), "optionalMethod");
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn optional(&self) -> Vec<Selector> {
         // SAFETY: self.inner points to valid ProtocolInner
@@ -376,6 +406,11 @@ impl Protocol {
     /// // let adopted = proto2.adopted_protocols();
     /// // assert_eq!(adopted.len(), 1);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     #[must_use]
     pub fn adopted_protocols(&self) -> Vec<Protocol> {
         // SAFETY: self.inner points to valid ProtocolInner
@@ -387,6 +422,11 @@ impl Protocol {
     /// Gets all required methods (including from base protocols).
     ///
     /// This is used internally by `validate_protocol_conformance`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     pub(crate) fn all_required(&self) -> Vec<(u64, Selector)> {
         let mut methods = Vec::new();
 
@@ -407,6 +447,12 @@ impl Protocol {
 }
 
 impl fmt::Debug for Protocol {
+    /// Formats the `Protocol` for debugging.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: self.inner points to valid ProtocolInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -433,7 +479,7 @@ impl Clone for Protocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{get_global_arena, Class, Category, Method};
+    use crate::runtime::{get_global_arena, Method};
     use std::str::FromStr;
 
     #[test]
@@ -498,7 +544,7 @@ mod tests {
     #[test]
     fn test_protocol_debug() {
         let protocol = Protocol::new("DebugProtocol", None).unwrap();
-        let debug_str = format!("{:?}", protocol);
+        let debug_str = format!("{protocol:?}");
         assert!(debug_str.contains("DebugProtocol"));
     }
 
@@ -578,7 +624,7 @@ mod tests {
         let protocols = child.protocols();
         assert_eq!(protocols.len(), 2);
 
-        let protocol_names: Vec<&str> = protocols.iter().map(|p| p.name()).collect();
+        let protocol_names: Vec<&str> = protocols.iter().map(super::Protocol::name).collect();
         assert!(protocol_names.contains(&"Proto1"));
         assert!(protocol_names.contains(&"Proto2"));
     }

@@ -16,7 +16,7 @@ fn bench_inline_string_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("inline_creation");
     group.sample_size(1000); // Reduced to avoid excessive allocations
 
-    for len in [0, 1, 4, 8, 15].iter() {
+    for len in &[0, 1, 4, 8, 15] {
         let s = "a".repeat(*len);
         group.bench_with_input(BenchmarkId::from_parameter(len), len, |b, _len| {
             let arena = Arena::new(4096);
@@ -35,7 +35,7 @@ fn bench_heap_string_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("heap_creation");
     group.sample_size(100); // Reduced to avoid filling the arena
 
-    for len in [16, 32, 64, 256, 1024].iter() {
+    for len in &[16, 32, 64, 256, 1024] {
         let s = "a".repeat(*len);
         group.bench_with_input(BenchmarkId::from_parameter(len), len, |b, _len| {
             let arena = Arena::new(4096);
@@ -48,7 +48,7 @@ fn bench_heap_string_creation(c: &mut Criterion) {
 
 /// Benchmark string cloning.
 ///
-/// Tests the performance of cloning RuntimeString for both inline and heap strings.
+/// Tests the performance of cloning `RuntimeString` for both inline and heap strings.
 /// Inline strings copy by value; heap strings increment a refcount.
 fn bench_string_clone(c: &mut Criterion) {
     let mut group = c.benchmark_group("clone");
@@ -71,9 +71,9 @@ fn bench_string_clone(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark string comparison (PartialEq).
+/// Benchmark string comparison (`PartialEq`).
 ///
-/// Tests performance of comparing RuntimeString for equality in various scenarios:
+/// Tests performance of comparing `RuntimeString` for equality in various scenarios:
 /// - Inline vs inline (fast byte comparison)
 /// - Heap vs heap with same pointer (fastest - pointer equality)
 /// - Heap vs heap with different pointers (slower - byte comparison)
@@ -127,7 +127,7 @@ fn bench_interning(c: &mut Criterion) {
     // Cache miss - needs allocation
     group.bench_function("cache_miss", |b| {
         // Use a limited set of strings to avoid unbounded memory growth
-        let strings: Vec<String> = (0..100).map(|i| format!("uniqueString{}:", i)).collect();
+        let strings: Vec<String> = (0..100).map(|i| format!("uniqueString{i}:")).collect();
         let mut counter = 0;
         b.iter(|| {
             let s = &strings[counter % strings.len()];
@@ -143,10 +143,10 @@ fn bench_interning(c: &mut Criterion) {
 
 /// Benchmark string conversions.
 ///
-/// Tests performance of converting RuntimeString to different representations:
-/// - as_bytes() - returns byte slice
-/// - as_str() - validates UTF-8 and returns &str
-/// - to_string() - allocates a new Rust String
+/// Tests performance of converting `RuntimeString` to different representations:
+/// - `as_bytes()` - returns byte slice
+/// - `as_str()` - validates UTF-8 and returns &str
+/// - `to_string()` - allocates a new Rust String
 fn bench_conversions(c: &mut Criterion) {
     let mut group = c.benchmark_group("conversions");
     group.sample_size(1000); // Reduced to avoid excessive allocations
@@ -189,7 +189,7 @@ fn bench_conversions(c: &mut Criterion) {
 
 /// Benchmark hash computation.
 ///
-/// Tests performance of hashing RuntimeString.
+/// Tests performance of hashing `RuntimeString`.
 /// Inline strings hash inline bytes; heap strings use cached hash.
 fn bench_hash(c: &mut Criterion) {
     let mut group = c.benchmark_group("hash");

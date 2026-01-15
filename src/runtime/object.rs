@@ -481,6 +481,88 @@ impl Object {
         let class = self.class();
         class.lookup_method(selector).is_some()
     }
+
+    /// Sets the global forwarding hook for unhandled messages.
+    ///
+    /// The hook is called when a selector is not found in an object's class
+    /// hierarchy. If the hook returns Some(target), the message is retried on
+    /// the target object.
+    ///
+    /// # Priority
+    ///
+    /// Per-object hooks > Per-class hooks > Global hooks (this function)
+    ///
+    /// # Thread Safety
+    ///
+    /// This function is thread-safe. The last hook set wins.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::{Class, Object, Selector};
+    /// use std::sync::Mutex;
+    ///
+    /// static FORWARDING_TARGET: Mutex<Option<Object>> = Mutex::new(None);
+    ///
+    /// // Set up forwarding hook
+    /// Object::set_global_forwarding_hook(|_obj, _sel| {
+    ///     FORWARDING_TARGET.lock().unwrap().clone()
+    /// });
+    ///
+    /// // Later: clear the hook
+    /// Object::clear_global_forwarding_hook();
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// Forwarding hooks must NOT re-enter the dispatch system to avoid deadlocks.
+    /// Hooks should return quickly and avoid blocking operations.
+    pub fn set_global_forwarding_hook(hook: crate::runtime::forwarding::GlobalForwardingHook) {
+        crate::runtime::forwarding::set_global_forwarding_hook(hook);
+    }
+
+    /// Clears the global forwarding hook.
+    ///
+    /// After calling this, no global forwarding will occur (per-object and
+    /// per-class hooks are unaffected).
+    pub fn clear_global_forwarding_hook() {
+        crate::runtime::forwarding::clear_global_forwarding_hook();
+    }
+
+    /// Sets the forwarding event callback for diagnostics.
+    ///
+    /// The callback is invoked for all forwarding-related events, including:
+    /// - Forwarding attempts
+    /// - Forwarding success
+    /// - `DoesNotRecognizeSelector` invocations
+    /// - Forwarding loop detection
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::Object;
+    /// use oxidec::runtime::forwarding::ForwardingEvent;
+    ///
+    /// Object::set_forwarding_event_callback(|event| {
+    ///     match event {
+    ///         ForwardingEvent::ForwardingAttempt { object, selector, depth } => {
+    ///             eprintln!("Forwarding attempt: {} -> {}, depth {}",
+    ///                      object.class().name(), selector.name(), depth);
+    ///         }
+    ///         _ => { /* ... */ }
+    ///     }
+    /// });
+    /// ```
+    pub fn set_forwarding_event_callback(
+        callback: crate::runtime::forwarding::ForwardingEventCallback,
+    ) {
+        crate::runtime::forwarding::set_forwarding_event_callback(callback);
+    }
+
+    /// Clears the forwarding event callback.
+    pub fn clear_forwarding_event_callback() {
+        crate::runtime::forwarding::clear_forwarding_event_callback();
+    }
 }
 
 // SAFETY: Object is Send because:

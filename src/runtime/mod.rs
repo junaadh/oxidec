@@ -39,6 +39,7 @@ pub mod category;
 pub mod class;
 pub mod dispatch;
 pub mod encoding;
+pub mod forwarding;
 pub mod message;
 pub mod object;
 pub mod protocol;

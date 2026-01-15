@@ -94,6 +94,22 @@ pub enum Error {
 
     /// Method already registered in protocol.
     ProtocolMethodAlreadyRegistered,
+
+    /// Message forwarding failed (target object also didn't recognize selector).
+    ForwardingFailed {
+        /// The selector that failed to forward.
+        selector: String,
+        /// Human-readable reason for failure.
+        reason: String,
+    },
+
+    /// Forwarding loop detected (exceeded max forwarding depth).
+    ForwardingLoopDetected {
+        /// The selector that triggered the loop.
+        selector: String,
+        /// The forwarding depth when loop was detected.
+        depth: u32,
+    },
 }
 
 impl fmt::Display for Error {
@@ -166,6 +182,18 @@ impl fmt::Display for Error {
             }
             Error::ProtocolMethodAlreadyRegistered => {
                 write!(f, "Method already registered in protocol")
+            }
+            Error::ForwardingFailed { selector, reason } => {
+                write!(
+                    f,
+                    "Message forwarding failed for selector '{selector}': {reason}"
+                )
+            }
+            Error::ForwardingLoopDetected { selector, depth } => {
+                write!(
+                    f,
+                    "Forwarding loop detected for selector '{selector}' at depth {depth}"
+                )
             }
         }
     }

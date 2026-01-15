@@ -136,34 +136,22 @@ use crate::runtime::Selector;
 ///
 /// Panics if the method lookup fails (which should never happen if
 /// `SelectorNotFound` was not returned).
-pub unsafe fn send_message(
+///
+/// Helper function to call a method with arguments.
+///
+/// This extracts the common method calling logic to avoid duplication
+/// between normal dispatch and forwarded dispatch.
+///
+/// # Returns
+///
+/// * `Some(value)` - Method returned a value
+/// * `None` - Method returned void
+unsafe fn call_method_with_args(
     obj: &Object,
+    imp: crate::runtime::class::Imp,
     selector: &Selector,
     args: &MessageArgs,
-) -> Result<Option<usize>> {
-    // Get object's class
-    let class = obj.class();
-
-    // Lookup method implementation (with caching)
-    let imp = class.lookup_imp(selector).ok_or(Error::SelectorNotFound)?;
-
-    // Validate argument count
-    let method = class.lookup_method(selector).unwrap();
-    let encoding = method.types.as_str().unwrap();
-    let (_ret_type, arg_types) =
-        crate::runtime::encoding::parse_signature(encoding)?;
-
-    // arg_types includes self (@) and _cmd (:), so actual args = len - 2
-    let expected_args = arg_types.len() - 2;
-    let actual_args = args.count();
-
-    if actual_args != expected_args {
-        return Err(Error::ArgumentCountMismatch {
-            expected: arg_types.len(),
-            got: actual_args + 2,
-        });
-    }
-
+) -> Option<usize> {
     // Pack arguments based on MessageArgs variant
     let arg_slice = args.as_slice();
     let args_ptr: *const *mut u8 = if arg_slice.is_empty() {
@@ -194,18 +182,182 @@ pub unsafe fn send_message(
         imp(self_ptr, selector.as_handle(), args_ptr, ret_ptr);
     }
 
+    // Get method encoding for return value extraction
+    let class = obj.class();
+    let method = class.lookup_method(selector).unwrap();
+    let encoding = method.types.as_str().unwrap();
+
     // Extract return value based on method encoding
     let return_type = encoding.chars().next().unwrap();
     if return_type == 'v' {
-        Ok(None) // Void return
+        None // Void return
     } else {
         // Non-void return: read the value written by the method implementation
         // SAFETY: ret_ptr points to valid memory where the IMP wrote the return value.
         // We use read_unaligned to handle potentially misaligned pointers.
         // The IMP function is responsible for writing the correct type.
         let value = unsafe { std::ptr::read_unaligned(ret_ptr as *const usize) };
-        Ok(Some(value))
+        Some(value)
     }
+}
+
+/// Sends a message to an object with the given selector and arguments.
+///
+/// This is the core message dispatch function. It looks up the method
+/// implementation for the given selector in the object's class hierarchy
+/// (including categories), caches the result, and invokes the method.
+///
+/// # Arguments
+///
+/// * `obj` - The object to send the message to
+/// * `selector` - The method selector to look up
+/// * `args` - The arguments to pass to the method
+///
+/// # Returns
+///
+/// * `Ok(Some(value))` - The method returned a value
+/// * `Ok(None)` - The method returned void
+/// * `Err(Error::SelectorNotFound)` - The selector was not found
+/// * `Err(Error::ArgumentCountMismatch)` - Argument count doesn't match signature
+/// * `Err(Error::ForwardingFailed)` - Message forwarding failed
+/// * `Err(Error::ForwardingLoopDetected)` - Forwarding loop detected
+///
+/// # Panics
+///
+/// Panics if the method lookup cache lock is poisoned (indicates a concurrent
+/// access error or panic in another thread).
+///
+/// # Errors
+///
+/// This function returns `Err` if:
+/// - The selector is not found in the class hierarchy
+/// - The argument count doesn't match the method signature
+/// - Message forwarding fails (target also doesn't recognize selector)
+/// - A forwarding loop is detected (exceeds max depth)
+///
+/// # Safety
+///
+/// This function is unsafe because it calls arbitrary function pointers
+/// (method implementations) that must conform to the C ABI calling convention.
+pub unsafe fn send_message(
+    obj: &Object,
+    selector: &Selector,
+    args: &MessageArgs,
+) -> Result<Option<usize>> {
+    // Get object's class
+    let class = obj.class();
+
+    // Lookup method implementation (with caching)
+    let Some(imp) = class.lookup_imp(selector) else {
+        // Method not found - try forwarding
+
+        use crate::runtime::forwarding;
+
+        // Check cache first (performance optimization)
+        if let Some(cached_target) = forwarding::get_cached_target(obj, selector) {
+            forwarding::emit_forwarding_event(forwarding::ForwardingEvent::ForwardingSuccess {
+                object: obj.clone(),
+                selector: selector.clone(),
+                target: cached_target.clone(),
+            });
+
+            let target_class = cached_target.class();
+            if let Some(imp) = target_class.lookup_imp(selector) {
+                // Validate arguments for cached target
+                let method = target_class.lookup_method(selector).unwrap();
+                let encoding = method.types.as_str().unwrap();
+                let (_ret_type, arg_types) =
+                    crate::runtime::encoding::parse_signature(encoding)?;
+                let expected_args = arg_types.len() - 2;
+                let actual_args = args.count();
+
+                if actual_args != expected_args {
+                    return Err(Error::ArgumentCountMismatch {
+                        expected: arg_types.len(),
+                        got: actual_args + 2,
+                    });
+                }
+
+                // Call on cached target
+                return unsafe { Ok(call_method_with_args(&cached_target, imp, selector, args)) };
+            }
+            // Cache miss - fall through to full forwarding resolution
+        }
+
+        // Full forwarding resolution
+        match forwarding::resolve_forwarding(obj, selector) {
+            forwarding::ForwardingResult::Target(target) => {
+                // Cache for next time
+                forwarding::cache_forwarded_target(obj, selector, &target);
+
+                // Retry dispatch on target
+                let target_class = target.class();
+                let target_imp = target_class.lookup_imp(selector).ok_or(Error::ForwardingFailed {
+                    selector: selector.name().to_string(),
+                    reason: "Target also doesn't recognize selector".to_string(),
+                })?;
+
+                // Validate arguments for target
+                let method = target_class.lookup_method(selector).unwrap();
+                let encoding = method.types.as_str().unwrap();
+                let (_ret_type, arg_types) =
+                    crate::runtime::encoding::parse_signature(encoding)?;
+                let expected_args = arg_types.len() - 2;
+                let actual_args = args.count();
+
+                if actual_args != expected_args {
+                    return Err(Error::ArgumentCountMismatch {
+                        expected: arg_types.len(),
+                        got: actual_args + 2,
+                    });
+                }
+
+                return unsafe { Ok(call_method_with_args(&target, target_imp, selector, args)) };
+            }
+            forwarding::ForwardingResult::NotFound => {
+                // Check if object implements doesNotRecognizeSelector:
+                use std::str::FromStr;
+                let dnr_sel = Selector::from_str("doesNotRecognizeSelector:");
+                if dnr_sel.is_ok() && class.lookup_imp(&dnr_sel.unwrap()).is_some() {
+                    forwarding::emit_forwarding_event(forwarding::ForwardingEvent::DoesNotRecognize {
+                        object: obj.clone(),
+                        selector: selector.clone(),
+                    });
+                    // Note: Full doesNotRecognizeSelector: invocation with selector argument
+                    // would require packing the selector as a message argument. For now,
+                    // we just emit the event and fall through to SelectorNotFound.
+                }
+
+                return Err(Error::SelectorNotFound);
+            }
+            forwarding::ForwardingResult::LoopDetected => {
+                return Err(Error::ForwardingLoopDetected {
+                    selector: selector.name().to_string(),
+                    depth: forwarding::FORWARDING_DEPTH.with(std::cell::Cell::get),
+                });
+            }
+        }
+    };
+
+    // Validate argument count
+    let method = class.lookup_method(selector).unwrap();
+    let encoding = method.types.as_str().unwrap();
+    let (_ret_type, arg_types) =
+        crate::runtime::encoding::parse_signature(encoding)?;
+
+    // arg_types includes self (@) and _cmd (:), so actual args = len - 2
+    let expected_args = arg_types.len() - 2;
+    let actual_args = args.count();
+
+    if actual_args != expected_args {
+        return Err(Error::ArgumentCountMismatch {
+            expected: arg_types.len(),
+            got: actual_args + 2,
+        });
+    }
+
+    // Call the method using the helper
+    unsafe { Ok(call_method_with_args(obj, imp, selector, args)) }
 }
 
 #[cfg(test)]
@@ -232,13 +384,13 @@ mod tests {
         _self: crate::runtime::object::ObjectPtr,
         _cmd: SelectorHandle,
         _args: *const *mut u8,
-        _ret: *mut u8,
+        ret: *mut u8,
     ) {
         // Return 42 as usize
         // SAFETY: We use write_unaligned to handle potentially misaligned pointers.
         // The caller provides the return value buffer, and we write 42 to it.
         unsafe {
-            std::ptr::write_unaligned(_ret as *mut usize, 42);
+            std::ptr::write_unaligned(ret.cast::<usize>(), 42);
         };
     }
 

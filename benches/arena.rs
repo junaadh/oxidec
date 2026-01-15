@@ -18,7 +18,7 @@ fn bench_sequential_allocations(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequential_alloc");
     group.sample_size(1000);
 
-    for size in [4, 16, 64, 256, 1024, 4096].iter() {
+    for size in &[4, 16, 64, 256, 1024, 4096] {
         group.bench_with_input(
             BenchmarkId::from_parameter(size),
             size,
@@ -80,7 +80,7 @@ fn bench_chunk_growth(c: &mut Criterion) {
 
 /// Benchmark thread-local arena vs global arena.
 ///
-/// Compares LocalArena (no atomic operations) to Arena (atomic bump pointer)
+/// Compares `LocalArena` (no atomic operations) to Arena (atomic bump pointer)
 /// to measure the overhead of thread safety.
 fn bench_thread_local_vs_global(c: &mut Criterion) {
     let mut group = c.benchmark_group("arena_comparison");

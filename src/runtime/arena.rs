@@ -236,7 +236,7 @@ pub struct Chunk {
     /// Start of the chunk's memory region.
     start: NonNull<u8>,
     /// Current bump pointer (atomic for thread safety).
-    /// We use AtomicPtr<u8> to maintain proper provenance.
+    /// We use `AtomicPtr`<u8> to maintain proper provenance.
     ptr: AtomicPtr<u8>,
     /// End of the chunk's memory region (exclusive).
     end: NonNull<u8>,
@@ -703,7 +703,7 @@ impl Arena {
                         drop(Box::from_raw(new_chunk_raw));
                     }
                     // The chunk memory is freed when the Box is dropped
-                    continue; // Retry with the new current chunk
+                    // Retry with the new current chunk
                 }
             }
         }

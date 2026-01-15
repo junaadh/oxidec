@@ -36,7 +36,7 @@ use std::sync::RwLock;
 /// This struct is allocated in the global arena and never deallocated.
 #[repr(C)]
 pub(crate) struct CategoryInner {
-    /// Category name (e.g., "NSStringExtensions")
+    /// Category name (e.g., "`NSStringExtensions`")
     name: RuntimeString,
     /// Methods in this category: selector hash -> Method
     /// Protected by `RwLock` for thread-safe method addition
@@ -138,6 +138,11 @@ impl Category {
     ///
     /// Returns `Err(Error::CategoryAlreadyExists)` if a category with this
     /// name already exists for the given class.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the class's internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
     pub fn new(name: &str, class: &Class) -> Result<Self> {
         // SAFETY: class.inner points to valid ClassInner
         let class_inner = unsafe { &*class.inner.as_ptr() };
@@ -168,7 +173,7 @@ impl Category {
         if ptr.is_null() {
             return Err(Error::OutOfMemory);
         }
-        let inner = unsafe { NonNull::new_unchecked(ptr as *mut CategoryInner) };
+        let inner = unsafe { NonNull::new_unchecked(ptr.cast::<CategoryInner>()) };
 
         // Register with class
         {
@@ -218,6 +223,16 @@ impl Category {
     /// #     _ret: *mut u8,
     /// # ) {}
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the category's internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(Error::SelectorAlreadyExists)` if a method with this
+    /// selector already exists in the category.
     pub fn add_method(&self, method: Method) -> Result<()> {
         // SAFETY: self.inner points to valid CategoryInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -268,6 +283,7 @@ impl Category {
     ///
     /// Returns `Some(&Method)` if found, `None` otherwise.
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn lookup_method(&self, selector: &Selector) -> Option<&Method> {
         // SAFETY: self.inner points to valid CategoryInner
         let inner = unsafe { &*self.inner.as_ptr() };
@@ -399,7 +415,7 @@ mod tests {
     fn test_category_debug() {
         let class = Class::new_root("CategoryDebugClass").unwrap();
         let cat = Category::new("DebugCat", &class).unwrap();
-        let debug_str = format!("{:?}", cat);
+        let debug_str = format!("{cat:?}");
         assert!(debug_str.contains("DebugCat"));
     }
 

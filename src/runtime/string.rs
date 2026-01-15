@@ -130,8 +130,12 @@ impl Clone for RuntimeString {
             }
         } else {
             // Heap strings: increment reference count
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -160,8 +164,12 @@ impl Drop for RuntimeString {
     fn drop(&mut self) {
         if !self.is_inline() {
             // Heap strings: decrement reference count
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -578,9 +586,13 @@ impl RuntimeString {
             ((unsafe { self.data.inline[15] } as usize) >> 2) & 0x3F
         } else {
             // Get length from `HeapString`
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // `HeapString` is in arena memory, which is never deallocated.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - `HeapString` is in arena memory, which is never deallocated
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -606,8 +618,12 @@ impl RuntimeString {
         if self.is_inline() {
             Err(crate::error::Error::InvalidArenaState)
         } else {
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -672,9 +688,13 @@ impl RuntimeString {
             self.inline_bytes()
         } else {
             // Get data from `HeapString`
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // `HeapString` is in arena memory, which is never deallocated.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - `HeapString` is in arena memory, which is never deallocated
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -795,8 +815,12 @@ impl Hash for RuntimeString {
             unsafe { self.data.inline[..len].hash(state) };
         } else {
             // Use cached hash from `HeapString`
-            // SAFETY: Clear tag bits to get actual `HeapString` pointer.
-            // We use map_addr to mask off the tag bits while preserving provenance.
+            // SAFETY:
+            // - Clear tag bits to get actual `HeapString` pointer
+            // - Arena allocator guarantees 16-byte alignment for HeapString
+            // - The cast preserves provenance with map_addr while masking tag bits
+            // - Alignment is safe because arena allocations are always 16-byte aligned
+            #[expect(clippy::cast_ptr_alignment)]
             let heap_ptr = unsafe {
                 self.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
             };
@@ -986,7 +1010,12 @@ mod tests {
         );
 
         // Get initial refcount
-        // SAFETY: We use map_addr to mask off the tag bits while preserving provenance.
+        // SAFETY:
+        // - Clear tag bits to get actual `HeapString` pointer
+        // - Arena allocator guarantees 16-byte alignment for HeapString
+        // - The cast preserves provenance with map_addr while masking tag bits
+        // - Alignment is safe because arena allocations are always 16-byte aligned
+        #[expect(clippy::cast_ptr_alignment)]
         let heap_ptr1 = unsafe {
             rs1.data.ptr.as_ptr().map_addr(|addr| addr & POINTER_MASK) as *const HeapString
         };
