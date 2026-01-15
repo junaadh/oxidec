@@ -35,6 +35,7 @@
 //! ```
 
 pub mod arena;
+pub mod category;
 pub mod class;
 pub mod dispatch;
 pub mod encoding;
@@ -44,6 +45,7 @@ pub mod selector;
 pub mod string;
 
 pub use arena::{Arena, LocalArena};
+pub use category::Category;
 pub use class::{Class, Method};
 pub use message::MessageArgs;
 pub use object::{Object, ObjectPtr};

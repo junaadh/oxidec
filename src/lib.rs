@@ -36,6 +36,6 @@ pub mod runtime;
 // Re-export commonly used types
 pub use error::{Error, Result};
 pub use runtime::{
-    Arena, Class, LocalArena, Method, Object, RuntimeString, Selector,
+    Arena, Category, Class, LocalArena, Method, Object, RuntimeString, Selector,
     get_global_arena,
 };

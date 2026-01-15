@@ -38,6 +38,126 @@
 //! - `LocalArena`: Thread-local, single-threaded access only
 //! - Both types provide the same allocation interface and guarantees
 //!
+//! # Stacked Borrows Safety
+//!
+//! This allocator is designed to be **Stacked Borrows compliant** when used
+//! with MIRI's `-Zmiri-strict-provenance` flag. The following rules must be
+//! followed to ensure safety:
+//!
+//! ## Ownership Model
+//!
+//! ### Chunks
+//! - Each chunk is owned by exactly one `Box` at all times
+//! - When a chunk is **active** (pointed to by `current_chunk`), the `Box`
+//!   is leaked (transferred to `'static` lifetime)
+//! - When a chunk is **retired**, ownership is transferred back to a `Box`
+//!   and stored in `chunks` vector
+//!
+//! ### Critical Invariant
+//! ```text
+//! NEVER create a reference to leaked memory while the Box is still alive!
+//! NEVER call Box::from_raw on memory that wasn't leaked from Box::into_raw!
+//! ```
+//!
+//! ## Safe Patterns
+//!
+//! ### ✅ Correct: Create Box, then leak after CAS
+//! ```rust,ignore
+//! let chunk_box = Box::new(chunk);
+//! let chunk_raw = Box::into_raw(chunk_box);  // Ownership transferred to raw
+//!
+//! match atomic_cas(&mut ptr, old, chunk_raw) {
+//!     Ok(_) => {
+//!         // Success: chunk_raw is now owned by arena (leaked)
+//!         // DO NOT use chunk_box or call Box::from_raw here
+//!     }
+//!     Err(_) => {
+//!         // Failure: reclaim ownership
+//!         let _ = Box::from_raw(chunk_raw);  // Safe to reclaim
+//!     }
+//! }
+//! ```
+//!
+//! ### ❌ WRONG: Leak first, then try to reclaim
+//! ```rust,ignore
+//! let chunk_ptr = Box::leak(Box::new(chunk));  // Mutable reference with 'static
+//!
+//! match atomic_cas(&mut ptr, old, chunk_ptr) {
+//!     Ok(_) => { /* ... */ }
+//!     Err(_) => {
+//!         // VIOLATION: Cannot Box::from_raw on a leaked reference!
+//!         // This causes Stacked Borrows violations.
+//!         let _ = Box::from_raw(chunk_ptr);  // ❌ UB!
+//!     }
+//! }
+//! ```
+//!
+//! ## Atomic Operation Guidelines
+//!
+//! When using atomic operations on pointers:
+//!
+//! 1. **Always** use `Box::into_raw` before CAS (keeps ownership in raw pointer)
+//! 2. **Never** use `Box::leak` before CAS (creates reference tied to Box)
+//! 3. **Only** call `Box::from_raw` on pointers that came from `Box::into_raw`
+//! 4. **Never** mix `Box::leak` and `Box::from_raw` on the same allocation
+//!
+//! ## Reference Rules
+//!
+//! ### Mutable References (`&mut`)
+//! - **DO** create temporary `&mut` references for immediate operations
+//! - **DO NOT** keep `&mut` references across atomic operations
+//! - **DO NOT** create `&mut` to leaked memory while Box exists
+//!
+//! ### Shared References (`&`)
+//! - **DO** create `&` references to leaked memory for read-only access
+//! - **DO NOT** create `&` references while `&mut` exists
+//! - **DO NOT** mix shared and mutable references to same memory
+//!
+//! ### Raw Pointers (`*mut` / `*const`)
+//! - **DO** use raw pointers for atomic operations
+//! - **DO** use `addr_of!` and `offset_of!` to avoid creating references
+//! - **DO NOT** dereference raw pointers while mutable references exist
+//!
+//! ## Example: Safe Chunk Allocation
+//!
+//! ```rust,ignore
+//! fn allocate_new_chunk(&self) -> Result<()> {
+//!     loop {
+//!         // 1. Load current pointer
+//!         let current = self.current_chunk.load(Ordering::Acquire);
+//!
+//!         // 2. Create new chunk (owned by Box)
+//!         let new_chunk = Chunk::new(size)?;
+//!         let new_box = Box::new(new_chunk);
+//!
+//!         // 3. Transfer to raw pointer (still owned)
+//!         let new_raw = Box::into_raw(new_box);
+//!
+//!         // 4. Try atomic CAS
+//!         match self.current_chunk.compare_exchange_weak(
+//!             current,
+//!             new_raw,
+//!             Ordering::AcqRel,
+//!             Ordering::Acquire,
+//!         ) {
+//!             Ok(_) => {
+//!                 // Success: new_raw is now leaked (owned by arena)
+//!                 // Reclaim old chunk safely
+//!                 let old_box = unsafe { Box::from_raw(current) };
+//!                 self.chunks.lock().push(*old_box);
+//!                 return Ok(());
+//!             }
+//!             Err(_) => {
+//!                 // Failure: reclaim our new chunk
+//!                 // SAFETY: new_raw is owned by us, safe to reclaim
+//!                 unsafe { drop(Box::from_raw(new_raw)); }
+//!                 continue;  // Retry
+//!             }
+//!         }
+//!     }
+//! }
+//! ```
+//!
 //! # Safety
 //!
 //! The arena allocator uses extensive unsafe code for manual memory management.
@@ -512,29 +632,81 @@ impl Arena {
     /// # Arguments
     ///
     /// * `min_size` - The minimum size required for the new chunk.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method uses atomic compare-and-swap to safely replace the current chunk.
+    /// Only one thread will successfully replace the chunk; others will retry.
+    ///
+    /// # Stacked Borrows Safety
+    ///
+    /// This function carefully manages Box ownership to prevent Stacked Borrows violations:
+    ///
+    /// 1. **Before CAS**: `new_chunk_raw` is owned via `Box::into_raw` (no references exist)
+    /// 2. **After successful CAS**: `new_chunk_raw` is leaked (transferred to arena ownership)
+    /// 3. **After failed CAS**: `new_chunk_raw` is reclaimed via `Box::from_raw` (safe - we own it)
+    ///
+    /// **CRITICAL**: We use `Box::into_raw` NOT `Box::leak` to avoid creating a `&mut` reference
+    /// that would conflict with the Box's ownership and cause Stacked Borrows violations.
     fn allocate_new_chunk(&self, min_size: usize) -> Result<()> {
-        // Get the current chunk to determine size
-        let current_ptr = self.current_chunk.load(Ordering::Acquire);
-        let current_capacity = unsafe { &*current_ptr }.capacity;
+        // Try to replace the current chunk atomically
+        loop {
+            // Load current chunk pointer (Acquire ordering ensures we see the latest chunk)
+            let current_ptr = self.current_chunk.load(Ordering::Acquire);
 
-        // Calculate new chunk size (double the current, up to MAX_CHUNK_SIZE)
-        let new_size = (current_capacity * 2).min(MAX_CHUNK_SIZE).max(min_size);
+            // SAFETY: current_ptr is valid (leaked box with 'static lifetime)
+            // We only read the capacity field - no mutable references created
+            // Using `&*` is safe here because we're not keeping the reference
+            let current_capacity = unsafe { &*current_ptr }.capacity;
 
-        let new_chunk = Chunk::new(new_size)?;
+            // Calculate new chunk size (double the current, up to MAX_CHUNK_SIZE)
+            let new_size = (current_capacity * 2).min(MAX_CHUNK_SIZE).max(min_size);
 
-        // Leak the chunk to get a 'static pointer
-        let new_chunk_ptr = Box::leak(Box::new(new_chunk));
+            let new_chunk = Chunk::new(new_size)?;
 
-        // Reclaim the old chunk and store it for cleanup
-        let old_chunk = unsafe { Box::from_raw(current_ptr) };
-        let mut chunks = self.chunks.lock().unwrap();
-        chunks.push(*old_chunk);
+            // CRITICAL: Use Box::into_raw NOT Box::leak
+            // Box::leak would create a &'static mut, violating Stacked Borrows if we later
+            // call Box::from_raw. Box::into_raw keeps ownership in the raw pointer.
+            let new_chunk_box = Box::new(new_chunk);
+            let new_chunk_raw = Box::into_raw(new_chunk_box);
 
-        // Update current chunk pointer (Release ordering ensures all writes
-        // to the new chunk are visible before other threads see it)
-        self.current_chunk.store(new_chunk_ptr, Ordering::Release);
+            // SAFETY: new_chunk_raw is valid and non-null (Box guarantees this)
+            assert!(!new_chunk_raw.is_null(), "Chunk pointer must not be null");
 
-        Ok(())
+            // Try to atomically replace the current chunk
+            // SAFETY: Lock-free CAS operation - only one thread succeeds
+            // AcqRel ensures all writes to new chunk visible before other threads see it
+            match self.current_chunk.compare_exchange_weak(
+                current_ptr,
+                new_chunk_raw,
+                Ordering::AcqRel,  // Success ordering: ensures all writes to new chunk are visible
+                Ordering::Acquire, // Failure ordering: ensures we see the latest chunk
+            ) {
+                Ok(_) => {
+                    // We successfully replaced the chunk! Now safely reclaim the old one.
+                    // SAFETY: current_ptr points to a previously leaked chunk (from successful CAS)
+                    // Calling Box::from_raw is safe because we're reclaiming ownership
+                    // SAFETY: new_chunk_raw is now owned by the arena (leaked for 'static lifetime)
+                    // DO NOT call Box::from_raw on new_chunk_raw - it's no longer owned by us
+                    let old_chunk = unsafe { Box::from_raw(current_ptr) };
+                    let mut chunks = self.chunks.lock().unwrap();
+                    chunks.push(*old_chunk);
+                    return Ok(());
+                }
+                Err(_actual_ptr) => {
+                    // Another thread already replaced the chunk.
+                    // Clean up our unused chunk by reclaiming ownership.
+                    // SAFETY: new_chunk_raw is owned by us (CAS failed), safe to reclaim
+                    // We MUST reclaim here to avoid memory leak
+                    // Using drop() to make the intent explicit (reclaim then drop)
+                    unsafe {
+                        drop(Box::from_raw(new_chunk_raw));
+                    }
+                    // The chunk memory is freed when the Box is dropped
+                    continue; // Retry with the new current chunk
+                }
+            }
+        }
     }
 
     /// Allocates a string in the arena with a flexible array member.

@@ -80,6 +80,9 @@ pub(crate) struct ClassInner {
     cache: RwLock<HashMap<u64, (NonNull<ClassInner>, Imp)>>,
     /// `Class` flags (reserved for future use)
     flags: u32,
+    /// Categories attached to this class
+    /// Protected by `RwLock` for thread-safe category addition
+    pub(crate) categories: RwLock<Vec<NonNull<crate::runtime::category::CategoryInner>>>,
 }
 
 /// Global class registry.
@@ -275,6 +278,7 @@ impl Class {
             methods: RwLock::new(HashMap::new()),
             cache: RwLock::new(HashMap::new()),
             flags: 0,
+            categories: RwLock::new(Vec::new()),
         };
 
         // Allocate in global arena
@@ -428,6 +432,22 @@ impl Class {
         Ok(())
     }
 
+    /// Invalidates the method cache for this class.
+    ///
+    /// This is called internally when categories are added or methods are
+    /// swizzled to ensure the dispatch system uses the updated method list.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method acquires the cache write lock and clears all cached entries.
+    /// Multiple threads can call this concurrently.
+    pub(crate) fn invalidate_cache(&self) {
+        // SAFETY: self.inner points to valid `Class`Inner
+        let inner = unsafe { &*self.inner.as_ptr() };
+        let mut cache = inner.cache.write().unwrap();
+        cache.clear();
+    }
+
     /// Looks up a method by selector (searches inheritance chain).
     ///
     /// # Arguments
@@ -484,6 +504,21 @@ impl Class {
                 // We're creating a reference with the same lifetime as &self
                 return unsafe { Some(&*std::ptr::from_ref::<Method>(method)) };
             }
+            drop(methods);
+
+            // Check category methods (Phase 3.1)
+            let categories = inner.categories.read().unwrap();
+            for cat_ptr in categories.iter() {
+                // SAFETY: cat_ptr points to valid CategoryInner
+                let cat = unsafe { &*cat_ptr.as_ptr() };
+                let cat_methods = cat.methods.read().unwrap();
+                if let Some(method) = cat_methods.get(&hash) {
+                    // Found in category!
+                    // SAFETY: The method is in the arena and never deallocated
+                    return unsafe { Some(&*std::ptr::from_ref::<Method>(method)) };
+                }
+            }
+            drop(categories);
 
             // Not found, try superclass
             current_ptr = inner.super_class.map(NonNull::as_ptr);

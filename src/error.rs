@@ -7,7 +7,7 @@
 use std::fmt;
 
 /// Errors that can occur in the `OxideC` runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Arena allocation failed due to insufficient memory.
     OutOfMemory,
@@ -73,6 +73,18 @@ pub enum Error {
         /// Argument index
         index: usize,
     },
+
+    /// Category name already exists for this class.
+    CategoryAlreadyExists,
+
+    /// Protocol name already exists.
+    ProtocolAlreadyExists,
+
+    /// Missing required protocol method.
+    MissingProtocolMethod {
+        /// The selector that is missing
+        selector: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -127,6 +139,15 @@ impl fmt::Display for Error {
                     f,
                     "Argument type mismatch at index {index}: expected '{expected}', got '{got}'"
                 )
+            }
+            Error::CategoryAlreadyExists => {
+                write!(f, "Category name already exists for this class")
+            }
+            Error::ProtocolAlreadyExists => {
+                write!(f, "Protocol name already exists")
+            }
+            Error::MissingProtocolMethod { selector } => {
+                write!(f, "Missing required protocol method: {selector}")
             }
         }
     }
