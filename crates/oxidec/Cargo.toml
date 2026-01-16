@@ -11,10 +11,12 @@ keywords = ["objective-c", "runtime", "ffi", "dynamic", "memory"]
 categories = ["memory-management", "development-tools::ffi", "api-bindings"]
 
 [dependencies]
-# No runtime dependencies - pure std
+fxhash = "0.2"
 
 [dev-dependencies]
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
+fxhash = "0.2"
+ahash = "0.8"
 
 [[bench]]
 name = "arena"
@@ -22,4 +24,12 @@ harness = false
 
 [[bench]]
 name = "string"
+harness = false
+
+[[bench]]
+name = "selector_interning"
+harness = false
+
+[[bench]]
+name = "dispatch"
 harness = false
