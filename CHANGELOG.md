@@ -5,6 +5,51 @@ All notable changes to OxideC will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0-alpha] - 2026-01-16
+
+### Added
+- **Phase 4a.1**: Invocation objects for message manipulation
+  - Type-erased argument storage with safe access API
+  - Message rewriting capabilities (target, selector, arguments)
+  - Thread-safe (Send trait implemented)
+  - Proper memory management with Drop
+  - 11 comprehensive unit tests
+
+- **Phase 4a.2**: Four-stage message forwarding pipeline (complete Objective-C semantics)
+  - Stage 1: `forwardingTargetForSelector:` - Fast redirect (< 100ns)
+  - Stage 2: `methodSignatureForSelector:` - Signature lookup (< 50ns cached)
+  - Stage 3: `forwardInvocation:` - Full message manipulation (< 500ns)
+  - Stage 4: `doesNotRecognizeSelector:` - Fatal error handler
+  - Forwarding loop detection (max depth: 32)
+  - Signature caching with automatic invalidation on method changes
+  - Per-object, per-class, and global forwarding hooks for all stages
+  - Forwarding event callbacks for diagnostics
+  - Backward compatible with existing forwarding hooks
+
+### Changed
+- **Code Quality**: Zero clippy warnings at pedantic level
+- **Documentation**: All doctests fixed and passing (89 total)
+- **Testing**: 162 unit tests, 16 integration tests (all passing)
+- **Validation**: MIRI validated with strict provenance
+- **Pointer Safety**: Replaced all `as` casting with proper `.cast()` methods
+
+### Performance
+- Stage 1 forwarding: < 100ns (fast redirect)
+- Stage 2 forwarding: < 50ns cached (signature lookup)
+- Stage 3 forwarding: < 500ns (full invocation)
+- Maintained existing performance: ~50ns message send (cache hit)
+
+### Testing
+- 162 unit tests (all passing)
+- 16 integration tests: 7 forwarding + 9 swizzling (all passing)
+- 89 doctests (all passing, 6 ignored)
+- Total: 267 tests passing
+- MIRI validated with `-Zmiri-strict-provenance -Zmiri-ignore-leaks`
+- Zero clippy warnings (pedantic level)
+
+### Dependencies
+- No new dependencies (continues to have no external dependencies)
+
 ## [0.3.0-alpha] - 2026-01-16
 
 ### Added

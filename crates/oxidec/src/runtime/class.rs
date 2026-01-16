@@ -90,8 +90,21 @@ pub(crate) struct ClassInner {
         RwLock<Vec<NonNull<crate::runtime::protocol::ProtocolInner>>>,
     /// Per-class forwarding hook (called when selector not found in instances)
     /// Protected by `RwLock` for thread-safe hook access
+    /// Stage 1: forwardingTargetForSelector:
     pub(crate) forwarding_hook:
         RwLock<Option<crate::runtime::forwarding::ClassForwardingHook>>,
+    /// Method signature hook (Stage 2: methodSignatureForSelector:)
+    /// Protected by `RwLock` for thread-safe hook access
+    pub(crate) signature_hook:
+        RwLock<Option<crate::runtime::forwarding::MethodSignatureHook>>,
+    /// Forward invocation hook (Stage 3: forwardInvocation:)
+    /// Protected by `RwLock` for thread-safe hook access
+    pub(crate) forward_invocation_hook:
+        RwLock<Option<crate::runtime::forwarding::ForwardInvocationHook>>,
+    /// Does not recognize hook (Stage 4: doesNotRecognizeSelector:)
+    /// Protected by `RwLock` for thread-safe hook access
+    pub(crate) does_not_recognize_hook:
+        RwLock<Option<crate::runtime::forwarding::DoesNotRecognizeHook>>,
 }
 
 /// Global class registry.
@@ -290,6 +303,9 @@ impl Class {
             categories: RwLock::new(Vec::new()),
             protocols: RwLock::new(Vec::new()),
             forwarding_hook: RwLock::new(None),
+            signature_hook: RwLock::new(None),
+            forward_invocation_hook: RwLock::new(None),
+            does_not_recognize_hook: RwLock::new(None),
         };
 
         // Allocate in global arena
@@ -440,6 +456,9 @@ impl Class {
 
         methods.insert(hash, method);
 
+        // Clear signature cache when methods are added (forwarding may need new signatures)
+        crate::runtime::forwarding::clear_signature_cache();
+
         Ok(())
     }
 
@@ -457,6 +476,9 @@ impl Class {
         let inner = unsafe { &*self.inner.as_ptr() };
         let mut cache = inner.cache.write().unwrap();
         cache.clear();
+
+        // Clear signature cache when methods are swizzled
+        crate::runtime::forwarding::clear_signature_cache();
     }
 
     /// Looks up a method by selector (searches inheritance chain).
@@ -1095,6 +1117,187 @@ impl Class {
         // SAFETY: self.inner points to valid ClassInner allocated in arena
         let inner = unsafe { &*self.inner.as_ptr() };
         *inner.forwarding_hook.read().unwrap()
+    }
+
+    /// Sets the method signature lookup hook for this class (Stage 2).
+    ///
+    /// The hook is called when a selector is not found and the pipeline
+    /// needs a type signature to create an invocation. If the hook returns
+    /// Some(signature), the signature is used for Stage 3. If it returns
+    /// None, the pipeline skips to Stage 4.
+    ///
+    /// # When Called
+    ///
+    /// - After Stage 1 (`forwardingTargetForSelector:`) returns None
+    /// - Before Stage 3 (`forwardInvocation:`) creates the invocation
+    ///
+    /// # Use Cases
+    ///
+    /// - Dynamic objects that provide signatures at runtime
+    /// - Proxy objects that forward to other systems
+    /// - Debugging tools that introspect messages
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::runtime::Class;
+    /// use oxidec::runtime::Object;
+    /// use oxidec::runtime::Selector;
+    /// use std::str::FromStr;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// class.set_signature_hook(|obj, sel| {
+    ///     // Provide signature for dynamic methods
+    ///     if sel.name() == "dynamicMethod:" {
+    ///         Some("i@:i".to_string()) // int return, int arg
+    ///     } else {
+    ///         None
+    ///     }
+    /// });
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe. The last hook set wins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn set_signature_hook(&self, hook: crate::runtime::forwarding::MethodSignatureHook) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.signature_hook.write().unwrap() = Some(hook);
+    }
+
+    /// Clears this class's method signature lookup hook.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn clear_signature_hook(&self) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.signature_hook.write().unwrap() = None;
+    }
+
+    /// Sets the forward invocation hook for this class (Stage 3).
+    ///
+    /// The hook receives a mutable Invocation object containing the original
+    /// message. The hook can modify the target, selector, arguments, or return
+    /// value before the message is invoked.
+    ///
+    /// # When Called
+    ///
+    /// - After Stage 2 provides a method signature
+    /// - Before the message is actually invoked
+    ///
+    /// # Use Cases
+    ///
+    /// - Complex proxies that modify messages
+    /// - RPC systems that serialize/deserialize arguments
+    /// - Message transformation and logging
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::runtime::Class;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// class.set_forward_invocation_hook(|invocation| {
+    ///     // Log the message
+    ///     eprintln!("Sending {} to {}",
+    ///              invocation.selector().name(),
+    ///              invocation.target().class().name());
+    ///
+    ///     // Modify target if needed
+    ///     // invocation.set_target(&new_target);
+    /// });
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe. The last hook set wins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn set_forward_invocation_hook(
+        &self,
+        hook: crate::runtime::forwarding::ForwardInvocationHook,
+    ) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.forward_invocation_hook.write().unwrap() = Some(hook);
+    }
+
+    /// Clears this class's forward invocation hook.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn clear_forward_invocation_hook(&self) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.forward_invocation_hook.write().unwrap() = None;
+    }
+
+    /// Sets the does not recognize hook for this class (Stage 4).
+    ///
+    /// The hook is called when all previous stages failed to handle the message.
+    /// This is the last resort before returning `SelectorNotFound`.
+    ///
+    /// # When Called
+    ///
+    /// - When all previous stages (1, 2, 3) failed
+    /// - Before `SelectorNotFound` error is returned
+    ///
+    /// # Use Cases
+    ///
+    /// - Error logging and debugging
+    /// - Graceful error handling
+    /// - Custom error recovery
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::runtime::Class;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// class.set_does_not_recognize_hook(|obj, sel| {
+    ///     eprintln!("Object {} does not recognize selector: {}",
+    ///              obj.class().name(),
+    ///              sel.name());
+    /// });
+    /// ```
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe. The last hook set wins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn set_does_not_recognize_hook(&self, hook: crate::runtime::forwarding::DoesNotRecognizeHook) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.does_not_recognize_hook.write().unwrap() = Some(hook);
+    }
+
+    /// Clears this class's does not recognize hook.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (indicates a concurrent
+    /// access error or panic in another thread).
+    pub fn clear_does_not_recognize_hook(&self) {
+        // SAFETY: self.inner points to valid ClassInner allocated in arena
+        let inner = unsafe { &*self.inner.as_ptr() };
+        *inner.does_not_recognize_hook.write().unwrap() = None;
     }
 }
 

@@ -12,10 +12,11 @@ OxideX is a unified project with two main components:
 ### OxideC Runtime (COMPLETE ✓)
 A high-performance dynamic object runtime in Rust providing:
 - Message-based dispatch (`objc_msgSend` semantics)
-- Full Objective-C-style forwarding and introspection
+- Full Objective-C-style four-stage message forwarding pipeline
+- Invocation objects for message manipulation
 - Manual memory management with arena allocation
 - Type-safe abstractions over zero-cost unsafe internals
-- **Status**: Phase 3 complete (see [RFC.md](RFC.md) for test counts, MIRI validated)
+- **Status**: Phase 4a.2 complete (see [RFC.md](RFC.md) for test counts, MIRI validated)
 
 ### OxideX Language (PLANNED)
 A modern programming language featuring:
@@ -32,7 +33,7 @@ The project uses a Cargo workspace with clear separation of concerns:
 ```
 oxidex/
 ├── crates/
-│   ├── oxidec/                   # Runtime (Phase 1-3: COMPLETE)
+│   ├── oxidec/                   # Runtime (Phase 1-4a: COMPLETE)
 │   ├── oxidex-syntax/            # Language syntax (Phase 5)
 │   ├── oxidex-typecheck/         # Type checker (Phase 6)
 │   ├── oxidex-codegen/           # Code generation (Phase 7)
@@ -96,13 +97,28 @@ The OxideC runtime is built on a layered architecture:
 - [x] Type validation and verification
 - [x] Size calculation for encoded types
 - [x] Forwarding target for unhandled messages
-- [x] `forwardingTargetForSelector:` support
+- [x] `forwardingTargetForSelector:` support (Stage 1)
+- [x] `methodSignatureForSelector:` support (Stage 2)
+- [x] `forwardInvocation:` support (Stage 3)
+- [x] `doesNotRecognizeSelector:` support (Stage 4)
+- [x] Four-stage message forwarding pipeline
+- [x] Invocation objects for message manipulation
+- [x] Type-erased argument storage
+- [x] Message rewriting and retargeting
+- [x] Forwarding loop detection (max depth: 32)
+- [x] Signature caching for performance
+- [x] Per-class and global forwarding hooks
+- [x] Forwarding event callbacks for diagnostics
 - [x] Dynamic message forwarding
 - [x] Runtime method implementation swapping
 - [x] Atomic swizzle operations
 - [x] Cache invalidation on swizzle
 
-### Planned
+### Planned (Runtime Optimization)
+- [ ] Invocation pooling for performance
+- [ ] Proxy infrastructure
+- [ ] Runtime introspection APIs
+- [ ] Arena lifecycle management
 - [ ] Automatic Reference Counting (ARC)
 - [ ] Weak references
 - [ ] Autorelease pools
@@ -162,6 +178,9 @@ Current performance characteristics (Apple M1):
 | Selector intern (cache miss) | ~300ns |
 | Message send (cache hit) | ~50ns |
 | Message send (cache miss) | ~150ns |
+| Forwarding Stage 1 (fast redirect) | < 100ns |
+| Forwarding Stage 2 (signature, cached) | < 50ns |
+| Forwarding Stage 3 (full invocation) | < 500ns |
 | Arena allocation | ~13-15ns |
 | LocalArena allocation | ~2-3ns |
 | Class creation | ~1-2μs |

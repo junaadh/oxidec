@@ -19,31 +19,52 @@
 //! misaligned pointers. Pointer arithmetic uses `addr_of!` for strict provenance.
 //! All unsafe blocks have SAFETY comments explaining invariants.
 //!
+//! # Clippy Exceptions
+//!
+//! This module uses type-erased storage which requires some unsafe patterns:
+//!
 //! # Example
 //!
 //! ```rust
-//! use oxidec::runtime::{Invocation, Object, Selector};
+//! use oxidec::runtime::{Invocation, Object, Selector, MessageArgs, Class};
+//! use oxidec::runtime::get_global_arena;
+//! use std::str::FromStr;
 //!
+//! # unsafe extern "C" fn noop_impl(
+//! #     _self: oxidec::runtime::object::ObjectPtr,
+//! #     _cmd: oxidec::runtime::selector::SelectorHandle,
+//! #     _args: *const *mut u8,
+//! #     _ret: *mut u8,
+//! # ) {}
+//! #
+//! # let class = Class::new_root("MyClass").unwrap();
+//! # let selector = Selector::from_str("testMethod").unwrap();
+//! # let arena = get_global_arena();
+//! # let method = oxidec::runtime::class::Method {
+//! #     selector: selector.clone(),
+//! #     imp: noop_impl,
+//! #     types: oxidec::runtime::RuntimeString::new("v@:", arena),
+//! # };
+//! # class.add_method(method).unwrap();
+//! # let target = Object::new(&class).unwrap();
+//! # let new_target = target.clone();
 //! // Create invocation
-//! let invocation = Invocation::new(&target, &selector)?;
+//! let mut invocation = Invocation::new(&target, &selector)?;
 //!
 //! // Modify target
 //! invocation.set_target(&new_target);
 //!
 //! // Invoke
 //! unsafe { invocation.invoke()?; }
+//! # Ok::<(), oxidec::error::Error>(())
 //! ```
 
 use crate::error::{Error, Result};
 use crate::runtime::message::MessageArgs;
 use crate::runtime::{Object, Selector};
-use std::str::FromStr;
 
 /// Maximum number of arguments an invocation can hold (excluding self and _cmd).
 const MAX_ARGS: usize = 16;
-
-/// Maximum size of return value buffer (for large structs, use indirection).
-const MAX_RETURN_SIZE: usize = 16;
 
 /// Message invocation object.
 ///
@@ -74,19 +95,47 @@ const MAX_RETURN_SIZE: usize = 16;
 ///
 /// ```rust
 /// use oxidec::runtime::{Invocation, Object, Selector, MessageArgs};
+/// use oxidec::runtime::get_global_arena;
+/// use std::str::FromStr;
 ///
+/// # unsafe extern "C" fn noop_impl(
+/// #     _self: oxidec::runtime::object::ObjectPtr,
+/// #     _cmd: oxidec::runtime::selector::SelectorHandle,
+/// #     _args: *const *mut u8,
+/// #     _ret: *mut u8,
+/// # ) {}
+/// #
+/// # let class = oxidec::runtime::Class::new_root("MyClass").unwrap();
+/// # let selector = Selector::from_str("testMethod").unwrap();
+/// # let arena = get_global_arena();
+/// # let method = oxidec::runtime::class::Method {
+/// #     selector: selector.clone(),
+/// #     imp: noop_impl,
+/// #     types: oxidec::runtime::RuntimeString::new("v@:", arena),
+/// # };
+/// # class.add_method(method).unwrap();
+/// # let target = Object::new(&class).unwrap();
 /// // Create with target and selector
 /// let invocation = Invocation::new(&target, &selector)?;
 ///
 /// // Or with arguments
+/// # let new_target = target.clone();
+/// # let selector2 = Selector::from_str("testMethod:").unwrap();
+/// # let method2 = oxidec::runtime::class::Method {
+/// #     selector: selector2.clone(),
+/// #     imp: noop_impl,
+/// #     types: oxidec::runtime::RuntimeString::new("v@:ii", arena),
+/// # };
+/// # class.add_method(method2).unwrap();
 /// let args = MessageArgs::two(10, 20);
-/// let invocation = Invocation::with_arguments(&target, &selector, &args)?;
+/// let mut invocation = Invocation::with_arguments(&target, &selector2, &args)?;
 ///
 /// // Modify before invocation
 /// invocation.set_target(&new_target);
 ///
 /// // Invoke
 /// unsafe { invocation.invoke()?; }
+/// # Ok::<(), oxidec::error::Error>(())
 /// ```
 #[derive(Debug)]
 pub struct Invocation {
@@ -114,7 +163,8 @@ pub struct Invocation {
 }
 
 /// Invocation flags for optimization and bookkeeping.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(clippy::struct_excessive_bools)]
 struct InvocationFlags {
     /// Has this invocation been invoked?
     invoked: bool,
@@ -127,17 +177,6 @@ struct InvocationFlags {
 
     /// Have any arguments been modified since creation?
     arguments_modified: bool,
-}
-
-impl Default for InvocationFlags {
-    fn default() -> Self {
-        Self {
-            invoked: false,
-            target_modified: false,
-            selector_modified: false,
-            arguments_modified: false,
-        }
-    }
 }
 
 // SAFETY: Invocation is Send because all fields are Send:
@@ -161,12 +200,22 @@ impl Invocation {
     ///
     /// `Ok(Invocation)` if created successfully, `Err` if target is invalid.
     ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPointer` if the target's internal pointer is invalid.
+    ///
     /// # Example
     ///
     /// ```rust
     /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
     /// let invocation = Invocation::new(&target, &selector)?;
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
     pub fn new(target: &Object, selector: &Selector) -> Result<Self> {
         Self::with_arguments(target, selector, &MessageArgs::None)
@@ -184,18 +233,32 @@ impl Invocation {
     ///
     /// `Ok(Invocation)` if created successfully, `Err` if:
     /// - Target is invalid
-    /// - Argument count exceeds MAX_ARGS
+    /// - Argument count exceeds `MAX_ARGS`
     /// - Argument marshalling fails
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidPointer` if the target's internal pointer is invalid,
+    /// or `Error::ArgumentCountMismatch` if the argument count exceeds `MAX_ARGS`.
     ///
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::{Invocation, MessageArgs};
+    /// use oxidec::runtime::{Invocation, MessageArgs, Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod:").unwrap();
     /// let args = MessageArgs::two(10, 20);
     /// let invocation = Invocation::with_arguments(&target, &selector, &args)?;
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
-    pub fn with_arguments(target: &Object, selector: &Selector, args: &MessageArgs) -> Result<Self> {
+    pub fn with_arguments(
+        target: &Object,
+        selector: &Selector,
+        args: &MessageArgs,
+    ) -> Result<Self> {
         let arg_count = args.count();
 
         if arg_count > MAX_ARGS {
@@ -219,7 +282,7 @@ impl Invocation {
         })
     }
 
-    /// Marshals MessageArgs into type-erased pointer storage.
+    /// Marshals `MessageArgs` into type-erased pointer storage.
     ///
     /// # Safety
     ///
@@ -239,7 +302,7 @@ impl Invocation {
             // SAFETY: We leak the Box to convert to raw pointer.
             // The Drop implementation will reclaim this memory.
             let boxed = Box::new(arg);
-            let ptr = Box::into_raw(boxed) as *mut u8;
+            let ptr = Box::into_raw(boxed).cast();
             arguments.push(ptr);
         }
 
@@ -248,18 +311,21 @@ impl Invocation {
 
     /// Returns the target object.
     #[inline]
+    #[must_use]
     pub fn target(&self) -> &Object {
         &self.target
     }
 
     /// Returns the selector.
     #[inline]
+    #[must_use]
     pub fn selector(&self) -> &Selector {
         &self.selector
     }
 
     /// Returns the number of arguments (excluding self and _cmd).
     #[inline]
+    #[must_use]
     pub fn argument_count(&self) -> usize {
         self.arguments.len()
     }
@@ -273,8 +339,14 @@ impl Invocation {
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let new_target = target.clone();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
     /// invocation.set_target(&new_target);
     /// ```
     pub fn set_target(&mut self, target: &Object) {
@@ -291,13 +363,44 @@ impl Invocation {
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("oldMethod").unwrap();
+    /// # let new_selector = Selector::from_str("newMethod").unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
     /// invocation.set_selector(&new_selector);
     /// ```
     pub fn set_selector(&mut self, selector: &Selector) {
         self.selector = selector.clone();
         self.flags.selector_modified = true;
+    }
+
+    /// Sets the method signature for this invocation.
+    ///
+    /// The signature is used for argument validation and reconstruction.
+    /// This is typically set by the four-stage forwarding pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `signature` - The method signature encoding string
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use std::str::FromStr;
+    ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
+    /// invocation.set_signature(Some("i@:i".to_string()));
+    /// ```
+    pub fn set_signature(&mut self, signature: Option<String>) {
+        self.signature = signature;
     }
 
     /// Gets an argument by index (type-safe).
@@ -327,8 +430,17 @@ impl Invocation {
     ///
     /// ```rust
     /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Class, Object, Selector};
+    /// use oxidec::runtime::MessageArgs;
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let obj = Object::new(&class).unwrap();
+    /// # let sel = Selector::from_str("testMethod:").unwrap();
+    /// # let args = MessageArgs::two(42usize, 100usize);
+    /// # let invocation = Invocation::with_arguments(&obj, &sel, &args).unwrap();
     /// let arg: &usize = invocation.get_argument(0)?;
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
     pub fn get_argument<T>(&self, index: usize) -> Result<&T>
     where
@@ -350,7 +462,8 @@ impl Invocation {
         // Invariant: Memory will remain valid for lifetime of &self
         // Invariant: No other mutable references exist to this memory
         // Invariant: T must be same size as usize (enforced by caller)
-        let usize_ref = unsafe { &*(ptr as *const u8 as *const usize) };
+        let usize_ptr = ptr.cast::<usize>();
+        let usize_ref = unsafe { &*usize_ptr };
 
         // SAFETY: Transmute from &usize to &T
         // This is safe because MessageArgs stores all values as usize,
@@ -389,9 +502,16 @@ impl Invocation {
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector, MessageArgs};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod:").unwrap();
+    /// # let args = MessageArgs::two(1usize, 2usize);
+    /// # let mut invocation = Invocation::with_arguments(&target, &selector, &args).unwrap();
     /// invocation.set_argument(0, &42usize)?;
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
     pub fn set_argument<T>(&mut self, index: usize, value: &T) -> Result<()> {
         if index >= self.arguments.len() {
@@ -411,7 +531,7 @@ impl Invocation {
         // Invariant: T has same size as usize (caller responsibility)
         unsafe {
             let usize_ref: &usize = std::mem::transmute(value);
-            let write_ptr = ptr as *mut usize;
+            let write_ptr = ptr.cast::<usize>();
             std::ptr::write(write_ptr, *usize_ref);
         }
 
@@ -436,12 +556,18 @@ impl Invocation {
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
+    /// # invocation.set_return_value(&42usize);
     /// unsafe {
-    ///     invocation.invoke()?;
     ///     let result: &usize = invocation.get_return_value()?;
     /// }
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
     pub fn get_return_value<T>(&self) -> Result<&T>
     where
@@ -450,7 +576,8 @@ impl Invocation {
         let ptr = self.return_value.ok_or(Error::InvalidPointer { ptr: 0 })?;
 
         // SAFETY: Same rationale as get_argument
-        let usize_ref = unsafe { &*(ptr as *const u8 as *const usize) };
+        let usize_ptr = ptr.cast::<usize>();
+        let usize_ref = unsafe { &*usize_ptr };
         let value_ref = unsafe { std::mem::transmute::<&usize, &T>(usize_ref) };
 
         Ok(value_ref)
@@ -466,18 +593,27 @@ impl Invocation {
     ///
     /// * `value` - The return value to set
     ///
+    /// # Panics
+    ///
+    /// This function never panics.
+    ///
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use std::str::FromStr;
     ///
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
     /// invocation.set_return_value(&42usize);
     /// ```
     pub fn set_return_value<T>(&mut self, value: &T) {
         // Allocate return value storage if needed
         if self.return_value.is_none() {
             let boxed = Box::new(0usize); // Placeholder
-            let ptr = Box::into_raw(boxed) as *mut u8;
+            let ptr = Box::into_raw(boxed).cast();
             self.return_value = Some(ptr);
             self.return_size = std::mem::size_of::<T>();
         }
@@ -487,7 +623,7 @@ impl Invocation {
         // SAFETY: Same rationale as set_argument
         unsafe {
             let usize_ref: &usize = std::mem::transmute(value);
-            let write_ptr = ptr as *mut usize;
+            let write_ptr = ptr.cast::<usize>();
             std::ptr::write(write_ptr, *usize_ref);
         }
     }
@@ -514,20 +650,189 @@ impl Invocation {
     /// - Arguments are valid for the selector
     /// - The target is a valid object
     ///
+    /// # Errors
+    ///
+    /// Returns `Error::SelectorNotFound` if the selector is not found in the
+    /// target's class hierarchy, or `Error::ArgumentCountMismatch` if the
+    /// argument count doesn't match the method signature.
+    ///
     /// # Example
     ///
     /// ```rust
-    /// use oxidec::runtime::Invocation;
+    /// use oxidec::runtime::{Invocation, Class, Object, Selector};
+    /// use oxidec::runtime::get_global_arena;
+    /// use std::str::FromStr;
     ///
+    /// # unsafe extern "C" fn noop_impl(
+    /// #     _self: oxidec::runtime::object::ObjectPtr,
+    /// #     _cmd: oxidec::runtime::selector::SelectorHandle,
+    /// #     _args: *const *mut u8,
+    /// #     _ret: *mut u8,
+    /// # ) {}
+    /// #
+    /// # let class = Class::new_root("MyClass").unwrap();
+    /// # let selector = Selector::from_str("testMethod").unwrap();
+    /// # let arena = get_global_arena();
+    /// # let method = oxidec::runtime::class::Method {
+    /// #     selector: selector.clone(),
+    /// #     imp: noop_impl,
+    /// #     types: oxidec::runtime::RuntimeString::new("v@:", arena),
+    /// # };
+    /// # class.add_method(method).unwrap();
+    /// # let target = Object::new(&class).unwrap();
+    /// # let mut invocation = Invocation::new(&target, &selector).unwrap();
     /// unsafe {
     ///     let result = invocation.invoke()?;
     /// }
+    /// # Ok::<(), oxidec::error::Error>(())
     /// ```
     pub unsafe fn invoke(&mut self) -> Result<Option<usize>> {
-        // TODO: Integrate with dispatch.rs once we have the full pipeline
-        // For now, mark as invoked and return None
+        use crate::runtime::dispatch;
+
+        // Get target class
+        let target_class = self.target.class();
+
+        // Lookup method implementation
+        let imp = target_class
+            .lookup_imp(self.selector())
+            .ok_or(Error::SelectorNotFound)?;
+
+        // Validate argument count using method signature
+        let method = target_class
+            .lookup_method(self.selector())
+            .ok_or(Error::SelectorNotFound)?;
+
+        let encoding = method.types.as_str()?;
+
+        // Parse signature to get expected argument count
+        let (_ret_type, arg_types) =
+            crate::runtime::encoding::parse_signature(encoding)?;
+
+        // arg_types includes self (@) and _cmd (:), so actual args = len - 2
+        let expected_args = arg_types.len() - 2;
+        let actual_args = self.argument_count();
+
+        if actual_args != expected_args {
+            return Err(Error::ArgumentCountMismatch {
+                expected: arg_types.len(),
+                got: actual_args + 2,
+            });
+        }
+
+        // Reconstruct MessageArgs from type-erased arguments
+        let args = self.reconstruct_message_args()?;
+
+        // Call the method using dispatch helper
+        // SAFETY: We've validated all arguments above, and the target/selector are valid
+        let result = unsafe {
+            dispatch::call_method_with_args(
+                self.target(),
+                imp,
+                self.selector(),
+                &args,
+            )
+        };
+
+        // Store return value if non-void
         self.flags.invoked = true;
-        Ok(None)
+        if let Some(retval) = result {
+            self.set_return_value(&retval);
+            Ok(Some(retval))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Reconstructs `MessageArgs` from type-erased argument storage.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(MessageArgs)` with the reconstructed arguments
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::ArgumentCountMismatch` if the argument count exceeds
+    /// supported limits (8 for direct variants, more requires Many variant).
+    fn reconstruct_message_args(&self) -> Result<MessageArgs> {
+        match self.arguments.len() {
+            0 => Ok(MessageArgs::None),
+            1 => {
+                let arg: &usize = self.get_argument(0)?;
+                Ok(MessageArgs::one(*arg))
+            }
+            2 => {
+                let arg0: &usize = self.get_argument(0)?;
+                let arg1: &usize = self.get_argument(1)?;
+                Ok(MessageArgs::two(*arg0, *arg1))
+            }
+            3 => {
+                let arg0: &usize = self.get_argument(0)?;
+                let arg1: &usize = self.get_argument(1)?;
+                let arg2: &usize = self.get_argument(2)?;
+                Ok(MessageArgs::three([*arg0, *arg1, *arg2]))
+            }
+            4 => {
+                let arg0: &usize = self.get_argument(0)?;
+                let arg1: &usize = self.get_argument(1)?;
+                let arg2: &usize = self.get_argument(2)?;
+                let arg3: &usize = self.get_argument(3)?;
+                Ok(MessageArgs::four([*arg0, *arg1, *arg2, *arg3]))
+            }
+            5 => {
+                let args: [usize; 5] = [
+                    *self.get_argument(0)?,
+                    *self.get_argument(1)?,
+                    *self.get_argument(2)?,
+                    *self.get_argument(3)?,
+                    *self.get_argument(4)?,
+                ];
+                Ok(MessageArgs::five(args))
+            }
+            6 => {
+                let args: [usize; 6] = [
+                    *self.get_argument(0)?,
+                    *self.get_argument(1)?,
+                    *self.get_argument(2)?,
+                    *self.get_argument(3)?,
+                    *self.get_argument(4)?,
+                    *self.get_argument(5)?,
+                ];
+                Ok(MessageArgs::six(args))
+            }
+            7 => {
+                let args: [usize; 7] = [
+                    *self.get_argument(0)?,
+                    *self.get_argument(1)?,
+                    *self.get_argument(2)?,
+                    *self.get_argument(3)?,
+                    *self.get_argument(4)?,
+                    *self.get_argument(5)?,
+                    *self.get_argument(6)?,
+                ];
+                Ok(MessageArgs::seven(args))
+            }
+            8 => {
+                let args: [usize; 8] = [
+                    *self.get_argument(0)?,
+                    *self.get_argument(1)?,
+                    *self.get_argument(2)?,
+                    *self.get_argument(3)?,
+                    *self.get_argument(4)?,
+                    *self.get_argument(5)?,
+                    *self.get_argument(6)?,
+                    *self.get_argument(7)?,
+                ];
+                Ok(MessageArgs::eight(args))
+            }
+            n => {
+                // For > 8 arguments, we'd need to use MessageArgs::many with static storage
+                // For now, return an error as this is unlikely to be needed in practice
+                Err(Error::ArgumentCountMismatch {
+                    expected: 8,
+                    got: n + 2,
+                })
+            }
+        }
     }
 }
 
@@ -542,13 +847,13 @@ impl Drop for Invocation {
             // 2. No other references exist
             // 3. Memory was originally allocated as Box<usize>
             // 4. We're reconstructing the Box to let it drop normally
-            let _ = unsafe { Box::from_raw(*ptr as *mut usize) };
+            let _ = unsafe { Box::from_raw((*ptr).cast::<usize>()) };
         }
 
         // Reclaim return value memory if allocated
         if let Some(ptr) = self.return_value {
             // SAFETY: Same rationale as arguments
-            let _ = unsafe { Box::from_raw(ptr as *mut usize) };
+            let _ = unsafe { Box::from_raw(ptr.cast::<usize>()) };
         }
     }
 }
@@ -557,6 +862,7 @@ impl Drop for Invocation {
 mod tests {
     use super::*;
     use crate::runtime::class::Class;
+    use std::str::FromStr;
 
     #[test]
     fn test_invocation_creation() {
@@ -587,12 +893,13 @@ mod tests {
 
     #[test]
     fn test_invocation_too_many_arguments() {
+        const MANY_ARGS: [usize; 17] = [0; 17];
+
         let class = Class::new_root("TestTooManyArgs").unwrap();
         let object = Object::new(&class).unwrap();
         let selector = Selector::from_str("testMethod:").unwrap();
 
         // Create 17 arguments (exceeds MAX_ARGS of 16)
-        static MANY_ARGS: [usize; 17] = [0; 17];
         let args = MessageArgs::many(&MANY_ARGS);
 
         let invocation = Invocation::with_arguments(&object, &selector, &args);
@@ -633,8 +940,9 @@ mod tests {
         let object = Object::new(&class).unwrap();
         let selector = Selector::from_str("testMethod:").unwrap();
 
-        let args = MessageArgs::two(42usize, 100usize);
-        let invocation = Invocation::with_arguments(&object, &selector, &args).unwrap();
+        let msg_args = MessageArgs::two(42usize, 100usize);
+        let invocation =
+            Invocation::with_arguments(&object, &selector, &msg_args).unwrap();
 
         let arg0: &usize = invocation.get_argument(0).unwrap();
         assert_eq!(*arg0, 42);
@@ -660,8 +968,9 @@ mod tests {
         let object = Object::new(&class).unwrap();
         let selector = Selector::from_str("testMethod:").unwrap();
 
-        let args = MessageArgs::two(1usize, 2usize);
-        let mut invocation = Invocation::with_arguments(&object, &selector, &args).unwrap();
+        let msg_args = MessageArgs::two(1usize, 2usize);
+        let mut invocation =
+            Invocation::with_arguments(&object, &selector, &msg_args).unwrap();
 
         invocation.set_argument(0, &99usize).unwrap();
         let arg0: &usize = invocation.get_argument(0).unwrap();
@@ -723,7 +1032,8 @@ mod tests {
 
         // Modify arguments
         let args = MessageArgs::one(42usize);
-        let mut invocation = Invocation::with_arguments(&object1, &selector1, &args).unwrap();
+        let mut invocation =
+            Invocation::with_arguments(&object1, &selector1, &args).unwrap();
         invocation.set_argument(0, &99usize).unwrap();
         assert!(invocation.flags.arguments_modified);
     }
