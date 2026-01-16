@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/oxidec",
+    "crates/oxidex-mem",
     "crates/oxidex-syntax",
     "crates/oxidex-typecheck",
     "crates/oxidex-codegen",
@@ -23,6 +24,9 @@ repository = "https://github.com/junaadh/oxidec"
 [workspace.dependencies]
 # Runtime
 oxidec = { path = "crates/oxidec" }
+
+# Memory management
+oxidex-mem = { path = "crates/oxidex-mem" }
 
 # Language crates
 oxidex-syntax = { path = "crates/oxidex-syntax" }

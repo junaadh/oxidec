@@ -9,10 +9,7 @@
 //!
 //! Run with: `cargo test --test introspection_test`
 
-use oxidec::runtime::{
-    Class, Object, Selector, Protocol,
-    introspection::*,
-};
+use oxidec::runtime::{Class, Object, Protocol, Selector, introspection::*};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -38,7 +35,9 @@ fn test_all_classes() {
     assert!(!classes.is_empty(), "Should have at least one class");
 
     // Our test class should be in the list
-    let found = classes.iter().any(|c| c.name().starts_with("IntrospectionTest_"));
+    let found = classes
+        .iter()
+        .any(|c| c.name().starts_with("IntrospectionTest_"));
     assert!(found, "Test class should be registered");
 }
 
@@ -65,7 +64,11 @@ fn test_class_hierarchy_root() {
     let (class, _) = setup_test_class();
 
     let hierarchy = class_hierarchy(&class);
-    assert_eq!(hierarchy.len(), 1, "Root class should have hierarchy of length 1");
+    assert_eq!(
+        hierarchy.len(),
+        1,
+        "Root class should have hierarchy of length 1"
+    );
     assert_eq!(hierarchy[0].name(), class.name());
 }
 
@@ -134,7 +137,11 @@ fn test_instance_methods_empty() {
     let (class, _) = setup_test_class();
 
     let methods = instance_methods(&class);
-    assert_eq!(methods.len(), 0, "New class should have no instance methods");
+    assert_eq!(
+        methods.len(),
+        0,
+        "New class should have no instance methods"
+    );
 }
 
 #[test]
@@ -156,8 +163,8 @@ fn test_method_provider() {
 
     // Add method to parent
     use oxidec::runtime::Method;
-    use oxidec::runtime::get_global_arena;
     use oxidec::runtime::RuntimeString;
+    use oxidec::runtime::get_global_arena;
     use oxidec::runtime::object::ObjectPtr;
     use oxidec::runtime::selector::SelectorHandle;
 
@@ -194,7 +201,7 @@ fn test_method_provider() {
 fn test_all_protocols_empty() {
     let protocols = all_protocols();
     // May or may not have protocols from other tests
-    assert!(protocols.len() >= 0);
+    assert!(protocols.is_empty());
 }
 
 #[test]
@@ -264,7 +271,7 @@ fn test_object_is_instance_true() {
 
 #[test]
 fn test_object_is_instance_false() {
-    let (class1, object) = setup_test_class();
+    let (_class1, object) = setup_test_class();
     let (class2, _) = setup_test_class();
 
     assert!(!object_is_instance(&object, &class2));
@@ -280,8 +287,8 @@ fn test_object_responds_to() {
 
     // Add a method
     use oxidec::runtime::Method;
-    use oxidec::runtime::get_global_arena;
     use oxidec::runtime::RuntimeString;
+    use oxidec::runtime::get_global_arena;
     use oxidec::runtime::object::ObjectPtr;
     use oxidec::runtime::selector::SelectorHandle;
 
@@ -312,7 +319,7 @@ fn test_object_responds_to() {
 
 #[test]
 fn test_class_builder_new() {
-    let builder = ClassBuilder::new("DynamicClass", None);
+    let _builder = ClassBuilder::new("DynamicClass", None);
     // Should not panic
 }
 
@@ -405,10 +412,10 @@ fn test_deep_hierarchy() {
 
     // Verify inheritance chain (hierarchy is child first, then parents)
     // hierarchy[0] = Level10, hierarchy[1] = Level9, ..., hierarchy[10] = Level0
-    for i in 0..=10 {
+    (0..=10).for_each(|i| {
         let level_num = 10 - i;
         assert!(hierarchy[i].name().contains(&format!("Level{}", level_num)));
-    }
+    });
 }
 
 #[test]

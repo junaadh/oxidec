@@ -1,296 +1,207 @@
-// Arena leak detection and prevention tests
+// Arena allocation tests for oxidex-mem integration
 //
-// These tests validate the leak detection functionality of the arena allocator,
-// including tracking, reporting, and prevention strategies.
+// These tests validate the GlobalArena functionality from oxidex-mem
+// as used by the oxidec runtime.
 
 #[cfg(test)]
-mod leak_detection_tests {
-    use oxidec::runtime::arena::{Arena, LocalArena, ScopedArena};
-
-    /// Test that ScopedArena properly detects and reports leaks
-    #[test]
-    fn test_scoped_arena_leak_detection() {
-        // Note: In debug mode, this test will show leak warnings if we don't
-        // properly clean up allocations. Since we're allocating and not using
-        // the pointers after the arena drops, they're technically "leaks".
-
-        // However, since we're in a test and the arena is dropped properly,
-        // the leak tracker will report these allocations.
-
-        let arena = ScopedArena::new(4096);
-
-        // Allocate some data that we intentionally "leak"
-        let _data1: *mut u32 = arena.alloc(42);
-        let _data2: *mut u64 = arena.alloc(100);
-        let _data3: *mut u32 = arena.alloc(200);
-
-        // Arena drops here, and in debug mode will report these as leaks
-        // This is expected behavior for this test
-    }
-
-    /// Test that reset() clears the leak tracker
-    #[test]
-    fn test_reset_clears_leak_tracker() {
-        let arena = ScopedArena::new(4096);
-
-        // Allocate data
-        let _data1: *mut u32 = arena.alloc(42);
-        let _data2: *mut u64 = arena.alloc(100);
-
-        // Reset the arena (clears leak tracker)
-        arena.reset();
-
-        // Allocate more data
-        let _data3: *mut u32 = arena.alloc(200);
-
-        // Arena drops here - should only report data3 as leaked
-        // (data1 and data2 were cleared by reset)
-    }
-
-    /// Test that ScopedArena with no allocations doesn't report leaks
-    #[test]
-    fn test_no_allocations_no_leaks() {
-        let arena = ScopedArena::new(4096);
-        // Don't allocate anything
-        // Arena drops here - should not report any leaks
-    }
-
-    /// Test leak detection with multiple types
-    #[test]
-    fn test_leak_detection_multiple_types() {
-        let arena = ScopedArena::new(4096);
-
-        // Allocate various types
-        let _int: *mut i32 = arena.alloc(-42);
-        let _uint: *mut u32 = arena.alloc(42);
-        let _float: *mut f64 = arena.alloc(3.14);
-        let _bool: *mut bool = arena.alloc(true);
-        let _char: *mut char = arena.alloc('a');
-
-        // Arena drops here - should report all 5 allocations
-    }
-
-    /// Test that regular Arena doesn't have leak tracking
-    #[test]
-    fn test_regular_arena_no_leak_tracking() {
-        // Regular Arena doesn't track leaks (only ScopedArena does)
-        let arena = Arena::new(4096);
-
-        let _data1: *mut u32 = arena.alloc(42);
-        let _data2: *mut u64 = arena.alloc(100);
-
-        // No leak tracking - just drops silently
-        drop(arena);
-    }
-
-    /// Test LocalArena reset functionality
-    #[test]
-    fn test_local_arena_reset_reuse() {
-        let mut arena = LocalArena::new(4096);
-
-        // First allocation
-        let ptr1: *mut u32 = arena.alloc(42);
-        unsafe {
-            assert_eq!(*ptr1, 42);
-        }
-
-        // Reset
-        arena.reset();
-
-        // Second allocation - should reuse same memory
-        let ptr2: *mut u32 = arena.alloc(100);
-        unsafe {
-            assert_eq!(*ptr2, 100);
-        }
-
-        // Verify memory was reused
-        assert_eq!(ptr1, ptr2);
-    }
-}
-
-#[cfg(test)]
-mod leak_prevention_tests {
-    use oxidec::runtime::arena::ScopedArena;
+mod global_arena_tests {
+    use oxidex_mem::GlobalArena;
     use std::sync::Arc;
+    use std::thread;
 
-    /// Test proper scoping prevents leaks
+    /// Test basic allocation in GlobalArena
     #[test]
-    fn test_proper_scoping() {
-        // Allocate in inner scope
-        {
-            let arena = ScopedArena::new(4096);
-            let _data = arena.alloc(42u32);
-            // Arena dropped here - all memory freed
-        }
-        // No leaks possible here
+    fn test_global_arena_basic_allocation() {
+        let arena = GlobalArena::new(4096);
+
+        let data1: &mut u32 = arena.alloc(42);
+        let data2: &mut u64 = arena.alloc(100);
+
+        assert_eq!(*data1, 42);
+        assert_eq!(*data2, 100);
     }
 
-    /// Test that moving arena transfers ownership
+    /// Test that GlobalArena is thread-safe
     #[test]
-    fn test_move_arena() {
-        let arena = ScopedArena::new(4096);
-        let data = arena.alloc(42u32);
+    fn test_global_arena_thread_safety() {
+        let arena = Arc::new(GlobalArena::new(4096));
+        let arena_clone1 = Arc::clone(&arena);
+        let arena_clone2 = Arc::clone(&arena);
 
-        // Move arena
-        let arena2 = arena;
-
-        // data is still valid (arena2 owns the memory)
-        unsafe {
-            assert_eq!(*data, 42);
-        }
-
-        // arena2 dropped here - reports data as leaked
-        // (but that's expected since we didn't use it after dropping)
-    }
-
-    /// Test Arc sharing of arena
-    #[test]
-    fn test_arc_shared_arena() {
-        let arena = Arc::new(ScopedArena::new(4096));
-
-        // Allocate from shared arena
-        let data = {
-            let arena_clone = Arc::clone(&arena);
-            arena_clone.alloc(42u32)
-        };
-
-        // data is valid as long as arena exists
-        unsafe {
-            assert_eq!(*data, 42);
-        }
-
-        // Keep data alive while arena exists
-        unsafe {
-            assert_eq!(*data, 42);
-        }
-
-        // Both arena and data dropped here
-        // Leak tracker will report the allocation
-    }
-
-    /// Test reset between operations
-    #[test]
-    fn test_reset_pattern() {
-        let arena = ScopedArena::new(4096);
-
-        // Pattern: Allocate -> Use -> Reset -> Repeat
-        for i in 0..10 {
-            let data = arena.alloc(i);
-            unsafe {
-                assert_eq!(*data, i);
+        let handle1 = thread::spawn(move || {
+            for i in 0..100 {
+                let _data: &mut u32 = arena_clone1.alloc(i);
             }
-            arena.reset();  // Clear for next iteration
-        }
+        });
 
-        // Only last allocation should be reported
-    }
-}
+        let handle2 = thread::spawn(move || {
+            for i in 0..100 {
+                let _data: &mut u32 = arena_clone2.alloc(i);
+            }
+        });
 
-#[cfg(test)]
-mod edge_case_tests {
-    use oxidec::runtime::arena::ScopedArena;
+        handle1.join().unwrap();
+        handle2.join().unwrap();
 
-    /// Test arena with zero allocations then reset
-    #[test]
-    fn test_reset_without_allocations() {
-        let arena = ScopedArena::new(4096);
-        arena.reset();  // Should not panic
-        // No leaks
+        // Should have allocated successfully without data races
+        let stats = arena.stats();
+        assert!(stats.total_allocated > 0);
     }
 
-    /// Test multiple resets in a row
+    /// Test GlobalArena stats
     #[test]
-    fn test_multiple_resets() {
-        let arena = ScopedArena::new(4096);
+    fn test_global_arena_stats() {
+        let arena = GlobalArena::new(4096);
 
-        let _data = arena.alloc(42u32);
-        arena.reset();
-        arena.reset();  // Reset again (no-op)
-        arena.reset();  // And again
+        let _data1: &mut u32 = arena.alloc(42);
+        let _data2: &mut u64 = arena.alloc(100);
 
-        let _data2 = arena.alloc(100u32);
-        // Only data2 should be reported
+        let stats = arena.stats();
+        assert!(stats.total_allocated > 0);
+        assert_eq!(stats.chunk_count, 1);
     }
 
-    /// Test reset after chunk growth
+    /// Test GlobalArena with large allocations
     #[test]
-    fn test_reset_after_growth() {
-        let arena = ScopedArena::new(64); // Small initial size
+    fn test_global_arena_large_allocation() {
+        let arena = GlobalArena::new(4096);
 
-        // Force chunk growth
-        for i in 0..100 {
-            let _data = arena.alloc(i);
-        }
-
-        arena.reset();  // Reset all chunks
-
-        // Allocate again - should start from first chunk
-        let data = arena.alloc(999u32);
-        unsafe {
-            assert_eq!(*data, 999);
-        }
-    }
-
-    /// Test large allocations
-    #[test]
-    fn test_large_allocation_leak_tracking() {
-        let arena = ScopedArena::new(4096);
-
-        // Allocate a larger structure
         struct LargeData {
-            a: [u64; 100],
-            b: [u32; 100],
+            _a: [u64; 100],
+            _b: [u32; 100],
         }
 
         let _data = arena.alloc(LargeData {
-            a: [0; 100],
-            b: [0; 100],
+            _a: [0; 100],
+            _b: [0; 100],
         });
 
-        // Arena drops here - should report the large allocation
+        let stats = arena.stats();
+        // Verify that some allocation occurred
+        assert!(stats.total_allocated > 0);
+        assert!(stats.total_allocated >= std::mem::size_of::<LargeData>());
     }
 
-    /// Test mixed allocation sizes
+    /// Test GlobalArena with multiple types
     #[test]
-    fn test_mixed_size_allocations() {
-        let arena = ScopedArena::new(4096);
+    fn test_global_arena_multiple_types() {
+        let arena = GlobalArena::new(4096);
 
-        let _small: *mut u8 = arena.alloc(1u8);
-        let _medium: *mut u32 = arena.alloc(42u32);
-        let _large: *mut [u64; 10] = arena.alloc([0u64; 10]);
+        let _int: &mut i32 = arena.alloc(-42);
+        let _uint: &mut u32 = arena.alloc(42);
+        let _float: &mut f64 = arena.alloc(3.148);
+        let _bool: &mut bool = arena.alloc(true);
+        let _char: &mut char = arena.alloc('a');
 
-        // Arena drops here - should report all 3 allocations
+        let stats = arena.stats();
+        assert!(stats.total_allocated > 0);
+    }
+
+    /// Test that GlobalArena can be shared via Arc
+    #[test]
+    fn test_global_arena_arc_sharing() {
+        let arena = Arc::new(GlobalArena::new(4096));
+
+        // Allocate from shared arena
+        let arena_clone = Arc::clone(&arena);
+        let data = arena_clone.alloc(42u32);
+
+        // data is valid as long as arena exists
+        assert_eq!(*data, 42);
+
+        // Keep data alive while arena exists
+        assert_eq!(*data, 42);
+
+        // Both arena_clone and data dropped here
+        drop(arena_clone);
+
+        // Original arena still has the allocation
+        assert_eq!(arena.stats().total_allocated > 0, true);
+    }
+
+    /// Test GlobalArena with many allocations
+    #[test]
+    fn test_global_arena_many_allocations() {
+        let arena = GlobalArena::new(4096);
+
+        // Allocate many items to force chunk growth
+        for i in 0..1000 {
+            let _data: &mut u32 = arena.alloc(i);
+        }
+
+        let stats = arena.stats();
+        assert!(stats.chunk_count >= 1);
+        assert!(stats.total_allocated > 0);
+    }
+
+    /// Test GlobalArena stats are accurate
+    #[test]
+    fn test_global_arena_stats_accuracy() {
+        let arena = GlobalArena::new(1024); // Small chunk size
+
+        let _data1: &mut u32 = arena.alloc(42);
+        let _data2: &mut u64 = arena.alloc(100);
+        let _data3: &mut u32 = arena.alloc(200);
+
+        let stats = arena.stats();
+        assert!(stats.total_allocated >= std::mem::size_of::<u32>() + std::mem::size_of::<u64>() + std::mem::size_of::<u32>());
+        assert!(stats.total_capacity >= stats.total_allocated);
     }
 }
 
 #[cfg(test)]
-mod statistics_tests {
-    use oxidec::runtime::arena::ScopedArena;
+mod global_arena_singleton_tests {
+    use oxidex_mem::global_arena;
+    use std::thread;
 
-    /// Test that stats work correctly with leak tracking
+    /// Test global_arena() returns the same instance
     #[test]
-    fn test_stats_with_leak_tracking() {
-        let arena = ScopedArena::new(4096);
+    fn test_global_arena_singleton() {
+        let arena1 = global_arena();
+        let arena2 = global_arena();
 
-        let _data1 = arena.alloc(42u32);
-        let _data2 = arena.alloc(100u64);
-
-        let stats = arena.stats();
-        assert!(stats.total_used > 0);
-        assert_eq!(stats.total_chunks, 1);
+        // Should be the same instance
+        assert!(std::ptr::eq(arena1, arena2));
     }
 
-    /// Test stats after reset
+    /// Test global_arena() can be used from multiple threads
     #[test]
-    fn test_stats_after_reset() {
-        let arena = ScopedArena::new(4096);
+    fn test_global_arena_singleton_thread_safe() {
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                thread::spawn(|| {
+                    let arena = global_arena();
+                    let _data: &mut u32 = arena.alloc(42);
+                })
+            })
+            .collect();
 
-        let _data1 = arena.alloc(42u32);
-        let _data2 = arena.alloc(100u64);
+        for handle in handles {
+            handle.join().unwrap();
+        }
 
-        arena.reset();
-
+        // All threads should have successfully allocated
+        let arena = global_arena();
         let stats = arena.stats();
-        assert_eq!(stats.total_used, 0);
+        assert!(stats.total_allocated > 0);
+    }
+
+    /// Test global_arena() persists across function calls
+    #[test]
+    fn test_global_arena_persistence() {
+        fn allocate_in_function() -> &'static mut u32 {
+            let arena = global_arena();
+            arena.alloc(42)
+        }
+
+        let data1 = allocate_in_function();
+        let data2 = allocate_in_function();
+
+        // Both allocations should be valid
+        assert_eq!(*data1, 42);
+        assert_eq!(*data2, 42);
+
+        // They should be different allocations
+        assert!(!std::ptr::eq(data1, data2));
     }
 }

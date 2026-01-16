@@ -8,8 +8,8 @@ You are assisting with the OxideX project—a modern programming language combin
 ## Project Overview
 
 OxideX is building:
-- **OxideC Runtime** (Phase 1-3: COMPLETE, Phase 3b-4c: Planned) - Safe, high-performance dynamic runtime
-- **OxideX Language** (Phase 5-13: Planned) - Modern syntax with message-based semantics
+- **OxideC Runtime** (Phase 1-4c: COMPLETE) - Safe, high-performance dynamic runtime
+- **OxideX Language** (Phase 5a: COMPLETE, Phase 5b-13: Planned) - Modern syntax with message-based semantics
 
 ### OxideC Runtime
 - **Dynamic Dispatch** with late binding and method caching
@@ -71,7 +71,7 @@ The entire runtime is built on this core principle:
 oxidex/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── oxidec/                   # Runtime (Phase 1-3: COMPLETE)
+│   ├── oxidec/                   # Runtime (Phase 1-4c: COMPLETE)
 │   │   ├── src/
 │   │   │   ├── lib.rs           # Public runtime API
 │   │   │   ├── error.rs         # Error types
@@ -79,15 +79,24 @@ oxidex/
 │   │   ├── benches/             # Performance benchmarks
 │   │   └── tests/               # Integration tests
 │   │
-│   ├── oxidex-syntax/            # Language syntax (Phase 5)
-│   ├── oxidex-typecheck/         # Type checker (Phase 6)
-│   ├── oxidex-codegen/           # Code generation (Phase 7)
-│   ├── oxidex-interpreter/       # Interpreter (Phase 8)
-│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9)
-│   ├── oxidex-jit/               # JIT compiler (Phase 10)
-│   ├── oxidex-aot/               # AOT compiler (Phase 11)
-│   ├── oxidex-std/               # Standard library (Phase 12)
-│   └── oxidex-cli/               # CLI tools (Phase 13)
+│   ├── oxidex-mem/               # Memory infrastructure (Phase 5a: COMPLETE)
+│   │   ├── src/
+│   │   │   ├── lib.rs           # Public API
+│   │   │   ├── arena.rs         # Arena allocator
+│   │   │   ├── symbol.rs        # Symbol type
+│   │   │   └── interner.rs      # String interning
+│   │   ├── benches/             # Performance benchmarks
+│   │   └── ARCHITECTURE.md      # Design documentation
+│   │
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: PLANNED)
+│   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
+│   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9: PLANNED)
+│   ├── oxidex-jit/               # JIT compiler (Phase 10: PLANNED)
+│   ├── oxidex-aot/               # AOT compiler (Phase 11: PLANNED)
+│   ├── oxidex-std/               # Standard library (Phase 12: PLANNED)
+│   └── oxidex-cli/               # CLI tools (Phase 13: PLANNED)
 ```
 
 ### OxideC Runtime Modules
@@ -143,16 +152,27 @@ crates/oxidec/src/runtime/
 - [x] Integration tests
 - [x] MIRI validation (see [RFC.md](RFC.md) for test counts)
 
-### Phase 4: Runtime Completion (In Progress)
+### Phase 4: Runtime Completion (COMPLETE)
 - [x] 4a.1: Invocation objects (NSInvocation equivalent)
-- [ ] 4a.2: Four-stage forwarding pipeline
-- [ ] 4a.3: Invocation pooling
-- [ ] 4a.4: Proxy infrastructure
-- [ ] 4a.5: Comprehensive testing
-- [ ] 4b: Runtime introspection APIs
-- [ ] 4c: Arena lifecycle management
+- [x] 4a.2: Four-stage forwarding pipeline
+- [x] 4a.3: Invocation pooling
+- [x] 4a.4: Proxy infrastructure
+- [x] 4a.5: Comprehensive testing
+- [x] 4b: Runtime introspection APIs
+- [x] 4c: Arena lifecycle management
 
-### Phase 5-13: Language Implementation (Planned)
+### Phase 5a: Memory Infrastructure (COMPLETE)
+- [x] oxidex-mem crate creation with feature flags
+- [x] Symbol(u32) type for interned string IDs
+- [x] LocalArena allocator for compiler frontend
+- [x] StringInterner with pre-interned keywords
+- [x] Lexer migration to Symbol-based tokens
+- [x] Zero heap allocations in lexer hot paths
+- [x] 5-6x memory reduction for token storage
+- [x] MIRI validation (157 tests passing)
+- [x] Comprehensive documentation
+
+### Phase 5b-13: Language Implementation (Planned)
 - [ ] Language frontend (syntax, parser, AST)
 - [ ] Type checker (inference, validation)
 - [ ] Code generation (AST → runtime calls)
@@ -239,8 +259,8 @@ All code must pass MIRI validation with strict provenance to ensure:
 
 - **Edition**: 2024 (Rust stable)
 - **Target**: Message-based dynamic language with systems-level performance
-- **Status**: Runtime Phase 3 Complete (Alpha 0.3), Runtime Phase 3b-4c Planned, Language Phase 5-13 Planned
-- **Next Milestone**: Phase 3b - Selector Optimization & Regression Fixes
+- **Status**: Runtime Phase 4c Complete (Alpha 0.4), Language Phase 5a Complete (Alpha 0.5), Language Phase 5b-13 Planned
+- **Next Milestone**: Phase 5b - Lexer, Parser, and AST Implementation
 - **Testing**: See [RFC.md](RFC.md) for test counts and coverage
 - **MIRI**: All tests pass with strict provenance validation
 

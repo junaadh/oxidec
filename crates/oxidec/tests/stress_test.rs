@@ -356,8 +356,13 @@ fn test_stress_performance_pool_acquisition() {
     let avg_ns = duration.as_nanos() / iterations as u128;
     println!("Average pool acquisition time: {} ns", avg_ns);
 
-    // Pool acquisition should be fast (< 500ns)
-    assert!(avg_ns < 500, "Pool acquisition too slow: {} ns", avg_ns);
+    // Pool acquisition should be fast (< 500ns in release, < 1000ns in debug)
+    #[cfg(debug_assertions)]
+    let threshold = 1000;
+    #[cfg(not(debug_assertions))]
+    let threshold = 500;
+
+    assert!(avg_ns < threshold, "Pool acquisition too slow: {} ns (threshold: {} ns)", avg_ns, threshold);
 }
 
 #[test]

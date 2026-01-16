@@ -7,17 +7,24 @@
 //!
 //! Run with: `cargo bench --bench introspection`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use oxidec::runtime::selector::SelectorHandle;
 use oxidec::runtime::{
-    Class, Selector, Protocol, Method, Object,
+    Class, Method, Object, RuntimeString, Selector, get_global_arena,
     introspection::*,
-    get_global_arena,
-    RuntimeString,
 };
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static BENCH_ID: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "C" fn test_impl(
+    _self: oxidec::runtime::object::ObjectPtr,
+    _cmd: SelectorHandle,
+    _args: *const *mut u8,
+    _ret: *mut u8,
+) {
+}
 
 /// Generate a unique class name for benchmarks
 fn unique_name(prefix: &str) -> String {
@@ -103,7 +110,7 @@ fn bench_instance_methods(c: &mut Criterion) {
         let selector = Selector::from_str(&format!("method{}:", i)).unwrap();
         let method = Method {
             selector,
-            imp: unsafe { std::mem::transmute(std::ptr::null::<()>()) },
+            imp: test_impl,
             types: RuntimeString::new("", get_global_arena()),
         };
         let _ = class.add_method(method);
@@ -123,7 +130,7 @@ fn bench_has_method(c: &mut Criterion) {
     let selector = Selector::from_str("testMethod:").unwrap();
     let method = Method {
         selector: selector.clone(),
-        imp: unsafe { std::mem::transmute(std::ptr::null::<()>()) },
+        imp: test_impl,
         types: RuntimeString::new("", get_global_arena()),
     };
     let _ = class.add_method(method);
@@ -143,14 +150,15 @@ fn bench_method_provider(c: &mut Criterion) {
     let selector = Selector::from_str("testMethod:").unwrap();
     let method = Method {
         selector: selector.clone(),
-        imp: unsafe { std::mem::transmute(std::ptr::null::<()>()) },
+        imp: test_impl,
         types: RuntimeString::new("", get_global_arena()),
     };
     let _ = parent.add_method(method);
 
     c.bench_function("method_provider", |b| {
         b.iter(|| {
-            let provider = method_provider(black_box(&child), black_box(&selector));
+            let provider =
+                method_provider(black_box(&child), black_box(&selector));
             black_box(provider);
         });
     });
@@ -177,14 +185,16 @@ fn bench_object_is_instance(c: &mut Criterion) {
 
     group.bench_function("true", |b| {
         b.iter(|| {
-            let result = object_is_instance(black_box(&object), black_box(&class));
+            let result =
+                object_is_instance(black_box(&object), black_box(&class));
             black_box(result);
         });
     });
 
     group.bench_function("false", |b| {
         b.iter(|| {
-            let result = object_is_instance(black_box(&object), black_box(&other_class));
+            let result =
+                object_is_instance(black_box(&object), black_box(&other_class));
             black_box(result);
         });
     });

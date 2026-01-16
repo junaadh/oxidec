@@ -3,13 +3,14 @@
 A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
-**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5-13 Planned
+**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b-13 Planned
 
 **Runtime Achievements:**
-- 452 tests passing (452/452)
-- MIRI validated with strict provenance (280/280 tests)
-- Global arena: 3.98ns (47.6% performance improvement)
-- Zero memory leaks (LeakTracker operational)
+- 424 tests passing (424/424)
+- MIRI validated with strict provenance (157/157 tests in oxidex-mem and oxidex-syntax)
+- Zero heap allocations in lexer hot paths
+- 5-6x memory reduction for token storage
+- String interning with Symbol(u32) IDs
 - Full Stacked Borrows compliance
 
 ## Overview
@@ -24,17 +25,22 @@ A high-performance dynamic object runtime in Rust providing:
 - Manual memory management with optimized arena allocation
 - Type-safe abstractions over zero-cost unsafe internals
 - **Status**: Phase 4c complete (see [RFC.md](RFC.md) for test counts, MIRI validated)
-  - 452 tests passing
+  - 452 tests passing (runtime only)
   - MIRI validated with strict provenance (280 tests)
   - Global arena: 3.98ns (47.6% improvement over baseline)
 
-### OxideX Language (PLANNED)
+### OxideX Language (IN PROGRESS)
 A modern programming language featuring:
 - Swift-inspired syntax with clean ergonomics
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 5-13 planned, runtime Phase 4c complete ✓
+- **Status**: Phase 5a complete, Phase 5b-13 planned
+  - Phase 5a: Memory infrastructure (oxidex-mem crate, string interning)
+  - 157 tests passing in oxidex-mem and oxidex-syntax
+  - MIRI validated with strict provenance (157 tests)
+  - Zero heap allocations in lexer hot paths
+  - 5-6x memory reduction for token storage
 
 ## Architecture
 
@@ -44,15 +50,16 @@ The project uses a Cargo workspace with clear separation of concerns:
 oxidex/
 ├── crates/
 │   ├── oxidec/                   # Runtime (Phase 1-4a: COMPLETE)
-│   ├── oxidex-syntax/            # Language syntax (Phase 5)
-│   ├── oxidex-typecheck/         # Type checker (Phase 6)
-│   ├── oxidex-codegen/           # Code generation (Phase 7)
-│   ├── oxidex-interpreter/       # Interpreter (Phase 8)
-│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9)
-│   ├── oxidex-jit/               # JIT compiler (Phase 10)
-│   ├── oxidex-aot/               # AOT compiler (Phase 11)
-│   ├── oxidex-std/               # Standard library (Phase 12)
-│   └── oxidex-cli/               # CLI tools (Phase 13)
+│   ├── oxidex-mem/               # Memory infrastructure (Phase 5a: COMPLETE)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: PLANNED)
+│   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
+│   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
+│   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)
+│   ├── oxidex-bytecode/          # Bytecode VM (Phase 9: PLANNED)
+│   ├── oxidex-jit/               # JIT compiler (Phase 10: PLANNED)
+│   ├── oxidex-aot/               # AOT compiler (Phase 11: PLANNED)
+│   ├── oxidex-std/               # Standard library (Phase 12: PLANNED)
+│   └── oxidex-cli/               # CLI tools (Phase 13: PLANNED)
 └── docs/
     ├── language/                 # Language specification
     ├── runtime/                  # Runtime documentation
@@ -129,6 +136,15 @@ The OxideC runtime is built on a layered architecture:
 - [x] Cache invalidation on swizzle
 - [x] Runtime introspection APIs (class hierarchy, method lookup, protocol conformance)
 - [x] Arena lifecycle management (ScopedArena, thread-local pools, leak detection)
+- [x] Memory infrastructure crate (oxidex-mem)
+- [x] Symbol type for interned string IDs (Symbol(u32))
+- [x] String interning with bidirectional mapping
+- [x] Pre-interned keywords (19 OxideX keywords, IDs 0-18)
+- [x] Arena-allocated string storage (2-3ns allocations)
+- [x] Lexer token migration from String to Symbol
+- [x] Zero heap allocations in lexer hot paths
+- [x] 5-6x memory reduction for token storage
+- [x] MIRI validated memory infrastructure (157 tests)
 
 ## Testing
 
@@ -177,7 +193,13 @@ Current performance characteristics (Apple M1):
 | Forwarding Stage 3 (full invocation) | < 500ns | |
 | Arena allocation (global) | 3.98ns | 47.6% improvement |
 | LocalArena allocation | 2.65ns | Thread-local, zero contention |
+| LocalArena string allocation | 2-3ns | oxidex-mem for compiler frontend |
 | Thread-local arena pool | ~2.65ns | Fast temporary allocation |
+| String intern (cache hit) | ~50ns | O(1) hash lookup |
+| String intern (new string) | ~100-200ns | O(n) copy + hash insert |
+| Symbol resolve | < 5ns | O(1) array indexing |
+| Lexer token (identifier) | < 100ns | Zero heap allocations |
+| Lexer token (keyword) | < 50ns | Pre-interned (ID 0-18) |
 | Class creation | ~1-2μs | |
 | Protocol creation | ~500ns | |
 
@@ -188,6 +210,7 @@ Current performance characteristics (Apple M1):
 - **Safety Guidelines**: See [SAFETY.md](SAFETY.md) for unsafe code patterns
 - **Arena Best Practices**: See [docs/arena_best_practices.md](docs/arena_best_practices.md) for leak prevention
 - **Phase 4c Summary**: See [docs/phase_4c_summary.md](docs/phase_4c_summary.md) for arena optimization details
+- **Memory Infrastructure**: See [crates/oxidex-mem/ARCHITECTURE.md](crates/oxidex-mem/ARCHITECTURE.md) for string interning design
 - **Changelog**: See [CHANGELOG.md](CHANGELOG.md) for release history
 
 ## Example

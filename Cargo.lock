@@ -40,6 +40,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -260,6 +266,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+ "allocator-api2",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -360,6 +376,7 @@ dependencies = [
  "backtrace",
  "criterion",
  "fxhash",
+ "oxidex-mem",
 ]
 
 [[package]]
@@ -414,6 +431,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidex-mem"
+version = "0.3.0"
+dependencies = [
+ "criterion",
+ "hashbrown",
+]
+
+[[package]]
 name = "oxidex-std"
 version = "0.3.0"
 dependencies = [
@@ -423,6 +448,10 @@ dependencies = [
 [[package]]
 name = "oxidex-syntax"
 version = "0.3.0"
+dependencies = [
+ "criterion",
+ "oxidex-mem",
+]
 
 [[package]]
 name = "oxidex-typecheck"

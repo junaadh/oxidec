@@ -7,7 +7,7 @@
 use criterion::{
     BenchmarkId, Criterion, black_box, criterion_group, criterion_main,
 };
-use oxidec::runtime::{Arena, LocalArena};
+use oxidec::runtime::{Arena, arena::LocalArena};
 
 /// Benchmark sequential allocations of different sizes.
 ///

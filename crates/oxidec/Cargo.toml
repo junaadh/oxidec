@@ -13,6 +13,7 @@ categories = ["memory-management", "development-tools::ffi", "api-bindings"]
 [dependencies]
 fxhash = "0.2"
 backtrace = { version = "0.3", optional = true }
+oxidex-mem = { path = "../oxidex-mem", features = ["runtime"] }
 
 [features]
 default = []

@@ -172,11 +172,10 @@ impl Category {
 
         // Allocate in arena
         let ptr = arena.alloc(category_inner);
-        if ptr.is_null() {
-            return Err(Error::OutOfMemory);
-        }
-        let inner =
-            unsafe { NonNull::new_unchecked(ptr.cast::<CategoryInner>()) };
+        // Convert reference to NonNull for internal storage
+        let inner = unsafe {
+            NonNull::new_unchecked(ptr as *mut CategoryInner)
+        };
 
         // Register with class
         {

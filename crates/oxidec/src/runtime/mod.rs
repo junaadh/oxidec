@@ -34,7 +34,8 @@
 //! let value: *mut u32 = arena.alloc(42);
 //! ```
 
-pub mod arena;
+// Arena module removed - now using oxidex-mem
+// pub mod arena;
 pub mod category;
 pub mod class;
 pub mod dispatch;
@@ -50,64 +51,31 @@ pub mod proxy;
 pub mod selector;
 pub mod string;
 
-pub use arena::{Arena, ArenaPool, ArenaPoolStats, LocalArena, PooledArena, ScopedArena, acquire_thread_arena};
+// Re-export arena types from oxidex-mem for backward compatibility
+pub use oxidex_mem::{GlobalArena as Arena, global_arena as get_global_arena};
 pub use category::Category;
 pub use class::{Class, Method};
 pub use invocation::Invocation;
 pub use message::MessageArgs;
 pub use object::{Object, ObjectPtr};
-pub use pool::{PooledInvocation, PoolStats};
+pub use pool::{PoolStats, PooledInvocation};
 pub use protocol::Protocol;
-pub use proxy::{compose_proxies, bypass_proxy, LoggingProxy, RemoteProxy, TransparentProxy};
+pub use proxy::{
+    LoggingProxy, RemoteProxy, TransparentProxy, bypass_proxy, compose_proxies,
+};
 pub use selector::Selector;
 pub use string::RuntimeString;
 
 // Re-export commonly used introspection APIs
 pub use introspection::{
-    all_classes, all_protocols, adopted_protocols, class_from_name, class_hierarchy,
-    class_methods, conforms_to, has_method, instance_methods, is_subclass, method_provider,
+    ClassBuilder, adopted_protocols, all_classes, all_protocols,
+    allocate_class, class_from_name, class_hierarchy, class_methods,
+    conforms_to, has_method, instance_methods, is_subclass, method_provider,
     object_get_class, object_is_instance, object_responds_to, subclasses,
-    allocate_class, ClassBuilder,
 };
 
-use std::sync::OnceLock;
-
-/// Global arena for allocating long-lived runtime metadata.
-///
-/// This arena is initialized once on first use and lives for the entire
-/// program duration. It's thread-safe and can be accessed from any thread.
-///
-/// # Thread Safety
-///
-/// The global arena uses atomic operations for allocation, making it safe
-/// to access from multiple threads concurrently.
-static GLOBAL_ARENA: OnceLock<Arena> = OnceLock::new();
-
-/// Returns a reference to the global arena.
-///
-/// This function initializes the global arena on first call with a 4 KiB
-/// initial chunk size. Subsequent calls return the same arena instance.
-///
-/// # Returns
-///
-/// A static reference to the global arena, valid for the entire program duration.
-///
-/// # Example
-///
-/// ```rust
-/// use oxidec::runtime::get_global_arena;
-///
-/// let arena = get_global_arena();
-/// let ptr: *mut u32 = arena.alloc(42);
-///
-/// unsafe {
-///     assert_eq!(*ptr, 42);
-/// }
-/// ```
-#[must_use]
-pub fn get_global_arena() -> &'static Arena {
-    GLOBAL_ARENA.get_or_init(|| Arena::with_config(4096, 16))
-}
+// Note: Global arena and get_global_arena are now provided by oxidex-mem
+// and re-exported above for backward compatibility.
 
 #[cfg(test)]
 mod tests {
@@ -119,10 +87,7 @@ mod tests {
         let arena2 = get_global_arena();
 
         // Should return the same instance
-        assert_eq!(
-            std::ptr::from_ref::<Arena>(arena1) as usize,
-            std::ptr::from_ref::<Arena>(arena2) as usize,
-        );
+        assert!(std::ptr::eq(arena1, arena2));
     }
 
     #[test]

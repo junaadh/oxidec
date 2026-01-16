@@ -1,0 +1,42 @@
+[package]
+name = "oxidex-mem"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Memory management infrastructure for OxideX compiler"
+
+[features]
+default = []
+
+# Thread-safe arena for runtime metadata (oxidec)
+global-arena = []
+
+# Thread-local arena for compiler frontend (oxidex-syntax)
+local-arena = []
+
+# Arena factory for creating arenas
+arena-factory = []
+
+# Full runtime feature set (for oxidec)
+runtime = ["global-arena", "arena-factory"]
+
+# Symbol type with hashbrown HashMap
+symbols = ["dep:hashbrown"]
+
+# String interning for compiler frontend
+# Also enables local-arena and arena-factory
+string-interner = ["local-arena", "arena-factory", "symbols"]
+
+[dependencies]
+# Optional: hashbrown for faster HashMap (used by string interner)
+# Only enabled when "symbols" feature is active
+hashbrown = { version = "0.14", optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "interner"
+harness = false

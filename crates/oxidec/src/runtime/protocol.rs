@@ -173,11 +173,10 @@ impl Protocol {
 
         // Allocate in arena
         let ptr = arena.alloc(protocol_inner);
-        if ptr.is_null() {
-            return Err(Error::OutOfMemory);
-        }
-        let inner =
-            unsafe { NonNull::new_unchecked(ptr.cast::<ProtocolInner>()) };
+        // Convert reference to NonNull for internal storage
+        let inner = unsafe {
+            NonNull::new_unchecked(ptr as *mut ProtocolInner)
+        };
 
         Ok(Protocol { inner })
     }

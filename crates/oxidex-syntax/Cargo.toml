@@ -7,4 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# TODO: Add dependencies when implementing Phase 4
+oxidex-mem = { path = "../oxidex-mem", features = ["string-interner"] }
+
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "lexer"
+harness = false
+
+# [[bench]]
+# name = "parser"
+# harness = false
