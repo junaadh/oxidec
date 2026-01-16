@@ -12,6 +12,11 @@ categories = ["memory-management", "development-tools::ffi", "api-bindings"]
 
 [dependencies]
 fxhash = "0.2"
+backtrace = { version = "0.3", optional = true }
+
+[features]
+default = []
+arena_backtrace = ["backtrace"]
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
@@ -32,4 +37,16 @@ harness = false
 
 [[bench]]
 name = "dispatch"
+harness = false
+
+[[bench]]
+name = "invocation_pool"
+harness = false
+
+[[bench]]
+name = "proxy"
+harness = false
+
+[[bench]]
+name = "introspection"
 harness = false

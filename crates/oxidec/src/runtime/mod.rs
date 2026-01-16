@@ -40,22 +40,35 @@ pub mod class;
 pub mod dispatch;
 pub mod encoding;
 pub mod forwarding;
+pub mod introspection;
 pub mod invocation;
 pub mod message;
 pub mod object;
+pub mod pool;
 pub mod protocol;
+pub mod proxy;
 pub mod selector;
 pub mod string;
 
-pub use arena::{Arena, LocalArena};
+pub use arena::{Arena, ArenaPool, ArenaPoolStats, LocalArena, PooledArena, ScopedArena, acquire_thread_arena};
 pub use category::Category;
 pub use class::{Class, Method};
 pub use invocation::Invocation;
 pub use message::MessageArgs;
 pub use object::{Object, ObjectPtr};
+pub use pool::{PooledInvocation, PoolStats};
 pub use protocol::Protocol;
+pub use proxy::{compose_proxies, bypass_proxy, LoggingProxy, RemoteProxy, TransparentProxy};
 pub use selector::Selector;
 pub use string::RuntimeString;
+
+// Re-export commonly used introspection APIs
+pub use introspection::{
+    all_classes, all_protocols, adopted_protocols, class_from_name, class_hierarchy,
+    class_methods, conforms_to, has_method, instance_methods, is_subclass, method_provider,
+    object_get_class, object_is_instance, object_responds_to, subclasses,
+    allocate_class, ClassBuilder,
+};
 
 use std::sync::OnceLock;
 

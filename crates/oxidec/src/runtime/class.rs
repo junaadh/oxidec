@@ -329,7 +329,10 @@ impl Class {
             classes.insert(name_check, inner_nn);
         }
 
-        Ok(Class { inner: inner_nn })
+        // Register in introspection registry
+        let class = Class { inner: inner_nn };
+        crate::runtime::introspection::register_class(&class);
+        Ok(class)
     }
 
     /// Checks for inheritance cycles when creating a subclass.
@@ -822,6 +825,29 @@ impl Class {
     ///
     /// Panics if the internal lock is poisoned (indicates a concurrent
     /// access error or panic in another thread).
+    #[must_use]
+    pub fn get_all_methods(&self) -> Vec<Method> {
+        let mut result = Vec::new();
+
+        // Add methods from this class
+        // SAFETY: self.inner points to valid ClassInner
+        let inner = unsafe { &*self.inner.as_ptr() };
+        let methods = inner.methods.read().unwrap();
+        for method in methods.values() {
+            result.push(method.clone());
+        }
+
+        result
+    }
+
+    /// Gets all protocols that this class conforms to.
+    ///
+    /// Returns protocols adopted by this class (not including inherited
+    /// protocols from superclasses).
+    ///
+    /// # Returns
+    ///
+    /// A vector of protocols this class adopts.
     #[must_use]
     pub fn protocols(&self) -> Vec<Protocol> {
         let mut result = Vec::new();

@@ -834,6 +834,75 @@ impl Invocation {
             }
         }
     }
+
+    /// Resets the invocation for reuse in object pooling.
+    ///
+    /// This method is used internally by the invocation pool to efficiently
+    /// reuse invocations without reallocating memory. It clears all state
+    /// and prepares the invocation for a new message send.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - The new target object
+    /// * `selector` - The new selector
+    ///
+    /// # Safety
+    ///
+    /// This method must only be called by the pool module to ensure proper
+    /// memory management. It reclaims all argument and return value memory.
+    #[allow(clippy::cast_ptr_alignment)]
+    pub(crate) fn reset(&mut self, target: &Object, selector: &Selector) {
+        // Reset target and selector
+        self.target = target.clone();
+        self.selector = selector.clone();
+
+        // Clear signature and return value
+        self.signature = None;
+        if let Some(ptr) = self.return_value.take() {
+            // SAFETY: Reclaim return value memory
+            let _ = unsafe { Box::from_raw(ptr.cast::<usize>()) };
+        }
+        self.return_size = 0;
+
+        // Reset flags
+        self.flags = InvocationFlags::default();
+
+        // Clear arguments (allocated memory will be reclaimed in marshal_arguments)
+        for ptr in &self.arguments {
+            // SAFETY: Reclaim argument memory
+            let _ = unsafe { Box::from_raw((*ptr).cast::<usize>()) };
+        }
+        self.arguments.clear();
+    }
+
+    /// Resets the invocation for reuse with new arguments.
+    ///
+    /// This method is used internally by the invocation pool to efficiently
+    /// reuse invocations with new arguments without reallocating memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - The new target object
+    /// * `selector` - The new selector
+    /// * `args` - The new arguments
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::ArgumentCountMismatch` if argument count exceeds limits.
+    #[allow(clippy::cast_ptr_alignment)]
+    pub(crate) fn reset_with_args(
+        &mut self,
+        target: &Object,
+        selector: &Selector,
+        args: &MessageArgs,
+    ) -> Result<()> {
+        // Reset basic fields
+        self.reset(target, selector);
+
+        // Marshal new arguments
+        self.arguments = Self::marshal_arguments(args)?;
+        Ok(())
+    }
 }
 
 impl Drop for Invocation {
