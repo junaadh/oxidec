@@ -656,7 +656,6 @@ Before code review, ensure:
 ---
 
 **Document Status:** Living document
-**Last Updated:** 2026-01-16
 **Version:** See [Cargo.toml](Cargo.toml)
 **MIRI Status:** See [RFC.md](RFC.md) for MIRI validation status
 **Test Coverage:** See [RFC.md](RFC.md) for test coverage details

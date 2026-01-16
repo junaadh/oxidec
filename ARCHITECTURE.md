@@ -2,7 +2,6 @@
 
 **Version:** See workspace root [Cargo.toml](Cargo.toml)
 **Status:** See [RFC.md](RFC.md) for implementation status and roadmap
-**Last Updated:** 2026-01-16
 
 ---
 
@@ -552,22 +551,22 @@ MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-ignore-leaks" \
 
 **Current Status:**
 - Runtime Phase 1-3: COMPLETE
-- Runtime Phase 3b-4c: PLANNED
+- Runtime Phase 3b-3d: COMPLETE (selector optimization and sharding)
+- Runtime Phase 4a.1: COMPLETE (invocation objects)
+- Runtime Phase 4a.2-4c: PLANNED
 - Language Phase 5-13: PLANNED
 - See [RFC.md](RFC.md) for test counts and validation status
 - MIRI validated (no UB)
 
 **Next Steps:**
-1. Fix selector interning regressions (Phase 3b)
-2. Complete message forwarding implementation (Phase 4a)
-3. Add runtime introspection APIs (Phase 4b)
-4. Formalize arena lifecycle management (Phase 4c)
+1. Complete four-stage forwarding pipeline (Phase 4a.2-4a.5)
+2. Add runtime introspection APIs (Phase 4b)
+3. Formalize arena lifecycle management (Phase 4c)
 
 **This is a multi-year project. The foundation is solid. The vision is clear.**
 
 ---
 
 **Primary Author**: Junaadh
-**Last Updated:** 2026-01-16
 **Status:** Runtime Complete, Language Planned
 

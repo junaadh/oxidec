@@ -2,7 +2,6 @@
 
 **Version:** See workspace root [Cargo.toml](Cargo.toml)
 **Status:** See [RFC.md](RFC.md) for current phase and roadmap
-**Last Updated:** 2026-01-16
 
 You are assisting with the OxideX project—a modern programming language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC, a custom Objective-C-inspired runtime written in Rust.
 
@@ -143,6 +142,15 @@ crates/oxidec/src/runtime/
 - [x] Method swizzling (runtime method replacement)
 - [x] Integration tests
 - [x] MIRI validation (see [RFC.md](RFC.md) for test counts)
+
+### Phase 4: Runtime Completion (In Progress)
+- [x] 4a.1: Invocation objects (NSInvocation equivalent)
+- [ ] 4a.2: Four-stage forwarding pipeline
+- [ ] 4a.3: Invocation pooling
+- [ ] 4a.4: Proxy infrastructure
+- [ ] 4a.5: Comprehensive testing
+- [ ] 4b: Runtime introspection APIs
+- [ ] 4c: Arena lifecycle management
 
 ### Phase 5-13: Language Implementation (Planned)
 - [ ] Language frontend (syntax, parser, AST)
