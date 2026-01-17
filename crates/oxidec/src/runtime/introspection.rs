@@ -28,10 +28,10 @@
 //! }
 //! ```
 
-use crate::runtime::{Class, Method, Selector, Protocol, Object};
 use crate::error::Result;
-use std::sync::RwLock;
+use crate::runtime::{Class, Method, Object, Protocol, Selector};
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use super::get_global_arena;
 
@@ -43,8 +43,9 @@ use super::get_global_arena;
 ///
 /// This registry maintains weak references to all classes to allow
 /// enumeration without preventing garbage collection.
-static CLASS_REGISTRY: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Class>>> =
-    std::sync::OnceLock::new();
+static CLASS_REGISTRY: std::sync::OnceLock<
+    std::sync::RwLock<HashMap<String, Class>>,
+> = std::sync::OnceLock::new();
 
 /// Register a class in the global registry.
 ///
@@ -535,7 +536,11 @@ impl ClassBuilder {
     /// // Add your method implementation here
     /// // builder.add_method(selector, my_implementation);
     /// ```
-    pub fn add_method(&mut self, selector: Selector, imp: super::class::Imp) -> &mut Self {
+    pub fn add_method(
+        &mut self,
+        selector: Selector,
+        imp: super::class::Imp,
+    ) -> &mut Self {
         self.methods.push((selector, imp));
         self
     }
@@ -599,7 +604,10 @@ impl ClassBuilder {
             let method = Method {
                 selector,
                 imp,
-                types: crate::runtime::RuntimeString::new("", get_global_arena()),
+                types: crate::runtime::RuntimeString::new(
+                    "",
+                    get_global_arena(),
+                ),
             };
             class.add_method(method)?;
         }
@@ -739,8 +747,8 @@ pub fn object_responds_to(object: &Object, selector: &Selector) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::str::FromStr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -755,7 +763,7 @@ mod tests {
         let class = setup_test_class();
         let classes = all_classes();
 
-        assert!(classes.len() >= 1);
+        assert!(!classes.is_empty());
         assert!(classes.iter().any(|c| c.name() == class.name()));
     }
 

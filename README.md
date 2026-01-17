@@ -3,15 +3,19 @@
 A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
-**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b-13 Planned
+**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 5c-13 Planned
 
 **Runtime Achievements:**
-- 424 tests passing (424/424)
-- MIRI validated with strict provenance (157/157 tests in oxidex-mem and oxidex-syntax)
+- 639 tests passing (639/639 with 6 ignored)
+- MIRI validated with strict provenance
 - Zero heap allocations in lexer hot paths
 - 5-6x memory reduction for token storage
 - String interning with Symbol(u32) IDs
 - Full Stacked Borrows compliance
+- Complete parser with 169 tests passing
+- Keywords properly separated from memory layer
+- Generic type parsing with angle bracket support
+- Rich error reporting with source highlighting and colors
 
 ## Overview
 
@@ -35,12 +39,16 @@ A modern programming language featuring:
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 5a complete, Phase 5b-13 planned
+- **Status**: Phase 5a complete, Phase 5b complete, Phase 5c-13 planned
   - Phase 5a: Memory infrastructure (oxidex-mem crate, string interning)
-  - 157 tests passing in oxidex-mem and oxidex-syntax
-  - MIRI validated with strict provenance (157 tests)
+  - Phase 5b: Complete lexer, parser, and diagnostics implementation
+  - 191 tests passing in oxidex-syntax (170 unit + 22 doctest)
+  - MIRI validated with strict provenance
   - Zero heap allocations in lexer hot paths
   - 5-6x memory reduction for token storage
+  - Keywords properly separated into syntax layer
+  - Generic type parsing with angle bracket support
+  - Rich error reporting with Rust-style diagnostics
 
 ## Architecture
 
@@ -49,9 +57,9 @@ The project uses a Cargo workspace with clear separation of concerns:
 ```
 oxidex/
 ├── crates/
-│   ├── oxidec/                   # Runtime (Phase 1-4a: COMPLETE)
+│   ├── oxidec/                   # Runtime (Phase 1-4c: COMPLETE)
 │   ├── oxidex-mem/               # Memory infrastructure (Phase 5a: COMPLETE)
-│   ├── oxidex-syntax/            # Language syntax (Phase 5b: PLANNED)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: COMPLETE)
 │   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
 │   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
 │   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)

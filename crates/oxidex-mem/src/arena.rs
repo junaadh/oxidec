@@ -1,4 +1,4 @@
-//! Arena allocator for OxideX runtime and compiler frontend.
+//! Arena allocator for `OxideX` runtime and compiler frontend.
 //!
 //! This module provides high-performance arena allocators designed for both
 //! runtime metadata (classes, selectors, protocols) and compiler data (tokens,
@@ -20,13 +20,13 @@
 //!
 //! Allocation performance characteristics:
 //!
-//! - **GlobalArena allocation**: ~13-15ns (atomic operations, thread-safe)
-//! - **LocalArena allocation**: ~2-3ns (no atomics, thread-local)
+//! - **`GlobalArena` allocation**: ~13-15ns (atomic operations, thread-safe)
+//! - **`LocalArena` allocation**: ~2-3ns (no atomics, thread-local)
 //! - **Chunk growth**: Amortized O(1) as chunks double in size
 //!
 //! # Examples
 //!
-//! ## GlobalArena (thread-safe, for runtime metadata)
+//! ## `GlobalArena` (thread-safe, for runtime metadata)
 //!
 //! ```
 //! use oxidex_mem::arena::GlobalArena;
@@ -44,7 +44,7 @@
 //! // Arena does NOT support reset (lives for program duration)
 //! ```
 //!
-//! ## LocalArena (thread-local, for compiler frontend)
+//! ## `LocalArena` (thread-local, for compiler frontend)
 //!
 //! ```
 //! use oxidex_mem::arena::LocalArena;
@@ -132,7 +132,7 @@ pub struct Chunk {
     /// Start of the chunk's memory region.
     start: NonNull<u8>,
     /// Current bump pointer (atomic for thread safety).
-    /// We store as AtomicPtr to maintain provenance and enable atomic updates.
+    /// We store as `AtomicPtr` to maintain provenance and enable atomic updates.
     ptr: AtomicPtr<u8>,
     /// End of the chunk's memory region (exclusive).
     end: NonNull<u8>,
@@ -264,7 +264,7 @@ impl Drop for Chunk {
 /// # Lifetime
 ///
 /// `GlobalArena` is designed for allocations that live for the entire program.
-/// It does NOT support reset() - once allocated, memory lives until program
+/// It does NOT support `reset()` - once allocated, memory lives until program
 /// termination. This provides clear lifetime semantics and prevents use-after-reset bugs.
 ///
 /// # Examples
@@ -352,6 +352,7 @@ impl GlobalArena {
     /// Panics if the allocation fails (e.g., out of memory and unable to
     /// allocate additional chunks).
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)] // Uses interior mutability via UnsafeCell
     pub fn alloc<T>(&self, value: T) -> &mut T {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>().max(self.alignment);
@@ -379,7 +380,7 @@ impl GlobalArena {
         }
     }
 
-    /// Allocates a new chunk and updates current_chunk pointer.
+    /// Allocates a new chunk and updates `current_chunk` pointer.
     #[cold]
     fn allocate_new_chunk(&self, min_size: usize) {
         let new_size = (self.chunk_size * 2).min(MAX_CHUNK_SIZE).max(min_size);
@@ -423,7 +424,7 @@ impl GlobalArena {
 
     /// Allocates a value with flexible array member in the global arena.
     ///
-    /// This is used for RuntimeString's heap allocation, where we need a
+    /// This is used for `RuntimeString`'s heap allocation, where we need a
     /// fixed-size struct followed by a variable-length string buffer.
     ///
     /// # Arguments
@@ -443,6 +444,7 @@ impl GlobalArena {
     /// The returned pointer must not be used to create references that extend
     /// beyond the original value's size.
     #[inline(always)]
+    #[allow(clippy::mut_from_ref)] // Uses interior mutability via UnsafeCell
     pub fn alloc_string<T>(&self, value: T, capacity: usize) -> *mut T {
         let size = std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>().max(self.alignment);

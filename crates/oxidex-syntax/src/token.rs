@@ -63,6 +63,9 @@ pub enum TokenKind {
     /// If statement/expression
     If,
 
+    /// Else clause
+    Else,
+
     /// Guard statement
     Guard,
 
@@ -84,11 +87,17 @@ pub enum TokenKind {
     /// Static variable
     Static,
 
+    /// Type alias
+    Type,
+
     /// Public visibility
     Pub,
 
     /// Private visibility (file-private)
     Prv,
+
+    /// Underscore wildcard
+    Underscore,
 
     // ===== Literals =====
     /// Identifier (variable name, function name, etc.)
@@ -158,6 +167,12 @@ pub enum TokenKind {
     /// Logical NOT: `!`
     Bang,
 
+    /// Ampersand: `&`
+    Amp,
+
+    /// Question mark: `?`
+    Question,
+
     /// Assignment: `=`
     Eq,
 
@@ -180,8 +195,20 @@ pub enum TokenKind {
     /// Right bracket: `]`
     RBracket,
 
+    /// Left angle: `<`
+    LAngle,
+
+    /// Right angle: `>`
+    RAngle,
+
     /// Dot: `.`
     Dot,
+
+    /// Double dot: `..`
+    DotDot,
+
+    /// Single pipe: `|`
+    Pipe,
 
     /// Colon: `:`
     Colon,
@@ -192,11 +219,17 @@ pub enum TokenKind {
     /// Comma: `,`
     Comma,
 
+    /// Semicolon: `;`
+    Semicolon,
+
     /// Thin arrow: `->`
     Arrow,
 
     /// Fat arrow: `=>`
     FatArrow,
+
+    /// Keyword 'in' for for loops
+    In,
 
     // ===== Special =====
     /// Start of string interpolation: `\(`
@@ -236,6 +269,7 @@ impl TokenKind {
                 | Self::Impl
                 | Self::Return
                 | Self::If
+                | Self::Else
                 | Self::Guard
                 | Self::Match
                 | Self::For
@@ -243,6 +277,7 @@ impl TokenKind {
                 | Self::Comptime
                 | Self::Const
                 | Self::Static
+                | Self::Type
                 | Self::Pub
                 | Self::Prv
         )
@@ -336,7 +371,7 @@ impl TokenKind {
             Self::EqEq | Self::BangEq => Some(4),
 
             // Comparison
-            Self::Lt | Self::Gt | Self::LtEq | Self::GtEq => Some(5),
+            Self::Lt | Self::Gt | Self::LAngle | Self::RAngle | Self::LtEq | Self::GtEq => Some(5),
 
             // Additive
             Self::Plus | Self::Minus => Some(6),
@@ -364,6 +399,7 @@ impl fmt::Display for TokenKind {
             Self::Impl => write!(f, "impl"),
             Self::Return => write!(f, "return"),
             Self::If => write!(f, "if"),
+            Self::Else => write!(f, "else"),
             Self::Guard => write!(f, "guard"),
             Self::Match => write!(f, "match"),
             Self::For => write!(f, "for"),
@@ -371,6 +407,7 @@ impl fmt::Display for TokenKind {
             Self::Comptime => write!(f, "comptime"),
             Self::Const => write!(f, "const"),
             Self::Static => write!(f, "static"),
+            Self::Type => write!(f, "type"),
             Self::Pub => write!(f, "pub"),
             Self::Prv => write!(f, "prv"),
 
@@ -411,7 +448,11 @@ impl fmt::Display for TokenKind {
             Self::AmpAmp => write!(f, "&&"),
             Self::PipePipe => write!(f, "||"),
             Self::Bang => write!(f, "!"),
+            Self::Amp => write!(f, "&"),
+            Self::Question => write!(f, "?"),
+            Self::Underscore => write!(f, "_"),
             Self::Eq => write!(f, "="),
+            Self::In => write!(f, "in"),
 
             // Delimiters
             Self::LParen => write!(f, "("),
@@ -420,10 +461,15 @@ impl fmt::Display for TokenKind {
             Self::RBrace => write!(f, "}}"),
             Self::LBracket => write!(f, "["),
             Self::RBracket => write!(f, "]"),
+            Self::LAngle => write!(f, "<"),
+            Self::RAngle => write!(f, ">"),
             Self::Dot => write!(f, "."),
+            Self::DotDot => write!(f, ".."),
+            Self::Pipe => write!(f, "|"),
             Self::Colon => write!(f, ":"),
             Self::ColonColon => write!(f, "::"),
             Self::Comma => write!(f, ","),
+            Self::Semicolon => write!(f, ";"),
             Self::Arrow => write!(f, "->"),
             Self::FatArrow => write!(f, "=>"),
 

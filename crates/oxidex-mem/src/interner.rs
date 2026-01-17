@@ -48,16 +48,6 @@ use hashbrown::HashMap;
 #[cfg(not(feature = "symbols"))]
 use std::collections::HashMap;
 
-/// All 19 OxideX keywords in order for consistent IDs (0-18).
-const KEYWORDS: &[&str] = &[
-    "let", "mut", "fn", "struct", "class", "enum", "protocol",
-    "impl", "return", "if", "guard", "match", "for", "while",
-    "comptime", "const", "static", "pub", "prv"
-];
-
-/// Number of pre-interned keywords.
-const KEYWORD_COUNT: u32 = 19;
-
 /// String interner with bidirectional mapping.
 ///
 /// The interner maintains two data structures:
@@ -81,11 +71,6 @@ const KEYWORD_COUNT: u32 = 19;
 /// // Re-interning returns the same ID
 /// let sym2 = interner.intern("myVariable");
 /// assert_eq!(sym, sym2);
-///
-/// // Keywords are pre-interned (IDs 0-18)
-/// let let_sym = interner.intern("let");
-/// assert_eq!(let_sym.as_u32(), 0);
-/// assert!(interner.is_keyword(let_sym));
 /// ```
 pub struct StringInterner {
     /// Arena for storing string data
@@ -102,10 +87,7 @@ pub struct StringInterner {
 }
 
 impl StringInterner {
-    /// Creates a new interner with pre-interned keywords.
-    ///
-    /// This initializes the interner with all 19 OxideX keywords,
-    /// ensuring they always have consistent IDs (0-18).
+    /// Creates a new empty interner.
     ///
     /// # Examples
     ///
@@ -113,33 +95,67 @@ impl StringInterner {
     /// use oxidex_mem::StringInterner;
     ///
     /// let mut interner = StringInterner::new();
+    /// assert_eq!(interner.len(), 0);
+    ///
+    /// let sym = interner.intern("myVariable");
+    /// assert_eq!(interner.len(), 1);
+    /// ```
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            arena: LocalArena::new(8192), // 8 KiB initial chunk
+            strings: Vec::new(),
+            symbols: HashMap::new(),
+            next_id: 0,
+        }
+    }
+
+    /// Creates a new interner with pre-interned strings.
+    ///
+    /// This is useful for pre-interning keywords or other frequently-used strings
+    /// to ensure they have consistent IDs (starting from 0).
+    ///
+    /// # Arguments
+    ///
+    /// * `strings` - Slice of strings to pre-intern in order
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use oxidex_mem::StringInterner;
+    ///
+    /// let keywords = &["let", "mut", "fn"];
+    /// let mut interner = StringInterner::with_pre_interned(keywords);
     ///
     /// // All keywords are pre-interned
-    /// assert_eq!(interner.len(), 19);
+    /// assert_eq!(interner.len(), 3);
     ///
     /// // Keywords have consistent IDs
     /// let let_sym = interner.intern("let");
     /// assert_eq!(let_sym.as_u32(), 0);
     /// ```
     #[must_use]
-    pub fn new() -> Self {
+    pub fn with_pre_interned(strings: &[&str]) -> Self {
         let mut interner = Self {
-            arena: LocalArena::new(8192), // 8 KiB initial chunk
+            arena: LocalArena::new(8192),
             strings: Vec::new(),
             symbols: HashMap::new(),
             next_id: 0,
         };
 
-        // Pre-intern all keywords (in order for consistent IDs)
-        for keyword in KEYWORDS {
-            interner.intern_keyword(keyword);
+        // Pre-intern all strings (in order for consistent IDs)
+        for s in strings {
+            interner.intern_pre_allocated(s);
         }
 
         interner
     }
 
-    /// Interns a keyword (used during initialization).
-    fn intern_keyword(&mut self, s: &str) -> Symbol {
+    /// Interns a string without checking if it already exists.
+    ///
+    /// Used only during initialization with pre-allocated strings.
+    /// Assumes the string doesn't already exist.
+    fn intern_pre_allocated(&mut self, s: &str) -> Symbol {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -249,10 +265,10 @@ impl StringInterner {
     /// use oxidex_mem::StringInterner;
     ///
     /// let mut interner = StringInterner::new();
-    /// assert_eq!(interner.len(), 19); // 19 pre-interned keywords
+    /// assert_eq!(interner.len(), 0);
     ///
     /// interner.intern("myVariable");
-    /// assert_eq!(interner.len(), 20);
+    /// assert_eq!(interner.len(), 1);
     /// ```
     #[must_use]
     pub fn len(&self) -> usize {
@@ -267,16 +283,14 @@ impl StringInterner {
     /// use oxidex_mem::StringInterner;
     ///
     /// let interner = StringInterner::new();
-    /// assert!(!interner.is_empty()); // Has 19 keywords
+    /// assert!(interner.is_empty());
     /// ```
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.strings.is_empty()
     }
 
-    /// Returns true if the given Symbol is a keyword.
-    ///
-    /// Keywords are always assigned IDs 0-18.
+    /// Returns the Symbol for a string if it has been interned.
     ///
     /// # Examples
     ///
@@ -285,37 +299,15 @@ impl StringInterner {
     ///
     /// let mut interner = StringInterner::new();
     ///
-    /// let let_sym = interner.intern("let");
-    /// assert!(interner.is_keyword(let_sym));
-    ///
-    /// let ident_sym = interner.intern("myVariable");
-    /// assert!(!interner.is_keyword(ident_sym));
-    /// ```
-    #[must_use]
-    pub const fn is_keyword(&self, _sym: Symbol) -> bool {
-        // First 19 IDs (0-18) are keywords
-        // Note: This is a const function, so we can't access self
-        // Callers should check: sym.as_u32() < KEYWORD_COUNT
-        _sym.as_u32() < KEYWORD_COUNT
-    }
-
-    /// Returns the Symbol for a keyword if it exists.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use oxidex_mem::StringInterner;
-    ///
-    /// let interner = StringInterner::new();
-    ///
-    /// let let_sym = interner.get_keyword_symbol("let").unwrap();
+    /// interner.intern("let");
+    /// let let_sym = interner.get_symbol("let").unwrap();
     /// assert_eq!(let_sym.as_u32(), 0);
     ///
-    /// assert!(interner.get_keyword_symbol("notAKeyword").is_none());
+    /// assert!(interner.get_symbol("notInterner").is_none());
     /// ```
     #[must_use]
-    pub fn get_keyword_symbol(&self, keyword: &str) -> Option<Symbol> {
-        self.symbols.get(keyword).copied()
+    pub fn get_symbol(&self, s: &str) -> Option<Symbol> {
+        self.symbols.get(s).copied()
     }
 }
 
@@ -332,36 +324,16 @@ mod tests {
     #[test]
     fn test_interner_creation() {
         let interner = StringInterner::new();
-        assert_eq!(interner.len(), 19); // 19 keywords
+        assert_eq!(interner.len(), 0);
+        assert!(interner.is_empty());
+    }
+
+    #[test]
+    fn test_with_pre_interned() {
+        let keywords = &["let", "mut", "fn"];
+        let interner = StringInterner::with_pre_interned(keywords);
+        assert_eq!(interner.len(), 3);
         assert!(!interner.is_empty());
-    }
-
-    #[test]
-    fn test_keyword_interning() {
-        let mut interner = StringInterner::new();
-
-        // All keywords should have consistent IDs
-        let let_sym = interner.intern("let");
-        assert_eq!(let_sym.as_u32(), 0);
-
-        let prv_sym = interner.intern("prv");
-        assert_eq!(prv_sym.as_u32(), 18);
-
-        // Re-interning should return same ID
-        let let_sym2 = interner.intern("let");
-        assert_eq!(let_sym, let_sym2);
-    }
-
-    #[test]
-    fn test_keyword_ids() {
-        let mut interner = StringInterner::new();
-
-        // Verify all keywords have IDs 0-18
-        for (i, &keyword) in KEYWORDS.iter().enumerate() {
-            let sym = interner.intern(keyword);
-            assert_eq!(sym.as_u32(), i as u32);
-            assert!(interner.is_keyword(sym));
-        }
     }
 
     #[test]
@@ -374,7 +346,7 @@ mod tests {
 
         assert_eq!(sym1, sym2); // Same string, same ID
         assert_ne!(sym1, sym3); // Different string, different ID
-        assert!(sym1.as_u32() >= 19); // Identifiers come after keywords
+        assert_eq!(sym1.as_u32(), 0); // First identifier gets ID 0
     }
 
     #[test]
@@ -385,17 +357,6 @@ mod tests {
         let resolved = interner.resolve(sym);
 
         assert_eq!(resolved, Some("testIdentifier"));
-    }
-
-    #[test]
-    fn test_keyword_detection() {
-        let mut interner = StringInterner::new();
-
-        let let_sym = interner.intern("let");
-        assert!(interner.is_keyword(let_sym));
-
-        let ident_sym = interner.intern("myVariable");
-        assert!(!interner.is_keyword(ident_sym));
     }
 
     #[test]
@@ -410,7 +371,7 @@ mod tests {
         }
 
         // All should be unique
-        assert_eq!(interner.len(), 19 + 1000);
+        assert_eq!(interner.len(), 1000);
 
         // Re-interning should return same IDs
         for (i, &sym) in syms.iter().enumerate() {
@@ -449,37 +410,15 @@ mod tests {
     }
 
     #[test]
-    fn test_get_keyword_symbol() {
-        let interner = StringInterner::new();
+    fn test_get_symbol() {
+        let mut interner = StringInterner::new();
 
-        let let_sym = interner.get_keyword_symbol("let").unwrap();
+        interner.intern("let");
+        let let_sym = interner.get_symbol("let").unwrap();
         assert_eq!(let_sym.as_u32(), 0);
 
-        let fn_sym = interner.get_keyword_symbol("fn").unwrap();
-        assert_eq!(fn_sym.as_u32(), 2);
-
-        // Non-keyword should return None
-        assert!(interner.get_keyword_symbol("notAKeyword").is_none());
-    }
-
-    #[test]
-    fn test_all_keywords() {
-        let interner = StringInterner::new();
-
-        // Verify all keywords are present and have correct IDs
-        let expected = [
-            ("let", 0), ("mut", 1), ("fn", 2), ("struct", 3), ("class", 4),
-            ("enum", 5), ("protocol", 6), ("impl", 7), ("return", 8),
-            ("if", 9), ("guard", 10), ("match", 11), ("for", 12),
-            ("while", 13), ("comptime", 14), ("const", 15), ("static", 16),
-            ("pub", 17), ("prv", 18),
-        ];
-
-        for &(keyword, expected_id) in &expected {
-            let sym = interner.get_keyword_symbol(keyword).unwrap();
-            assert_eq!(sym.as_u32(), expected_id);
-            assert_eq!(interner.resolve(sym), Some(keyword));
-        }
+        // Non-interned string should return None
+        assert!(interner.get_symbol("notInterner").is_none());
     }
 
     #[test]
@@ -514,5 +453,26 @@ mod tests {
         assert_eq!(interner.resolve(sym1), Some("变量"));
         assert_eq!(interner.resolve(sym2), Some("変数"));
         assert_eq!(interner.resolve(sym3), Some("متغير"));
+    }
+
+    #[test]
+    fn test_pre_interned_consistency() {
+        let keywords = &["let", "mut", "fn", "struct", "class"];
+        let mut interner = StringInterner::with_pre_interned(keywords);
+
+        // Pre-interned strings should have consistent IDs
+        let let_sym = interner.get_symbol("let").unwrap();
+        assert_eq!(let_sym.as_u32(), 0);
+
+        let class_sym = interner.get_symbol("class").unwrap();
+        assert_eq!(class_sym.as_u32(), 4);
+
+        // Re-interning pre-interned strings returns same ID
+        let let_sym2 = interner.intern("let");
+        assert_eq!(let_sym, let_sym2);
+
+        // New strings get IDs after pre-interned ones
+        let new_sym = interner.intern("myVariable");
+        assert_eq!(new_sym.as_u32(), 5);
     }
 }

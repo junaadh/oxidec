@@ -11,10 +11,10 @@
 // re-enter the dispatch system to avoid deadlocks.
 
 use crate::error::{Error, Result};
-use crate::runtime::{Object, Selector};
 use crate::runtime::invocation::Invocation;
 use crate::runtime::message::MessageArgs;
 use crate::runtime::pool::PooledInvocation;
+use crate::runtime::{Object, Selector};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
@@ -500,9 +500,10 @@ pub fn resolve_four_stage_forwarding(
 
     // Stage 3: Create and forward invocation (forwardInvocation:)
     // Use pooled invocation for performance (pool hit: ~100ns vs allocation: ~300ns)
-    let mut pooled = PooledInvocation::with_arguments(obj, sel, args).inspect_err(|_e| {
-        decrement_forwarding_depth();
-    })?;
+    let mut pooled = PooledInvocation::with_arguments(obj, sel, args)
+        .inspect_err(|_e| {
+            decrement_forwarding_depth();
+        })?;
 
     pooled.invocation().set_signature(Some(signature));
 
@@ -614,12 +615,19 @@ fn try_per_class_signature(obj: &Object, sel: &Selector) -> Option<String> {
     let class = obj.class();
     // SAFETY: ClassInner is valid and allocated in arena
     let inner = unsafe { &*class.inner.as_ptr() };
-    inner.signature_hook.read().unwrap().and_then(|hook| hook(obj, sel))
+    inner
+        .signature_hook
+        .read()
+        .unwrap()
+        .and_then(|hook| hook(obj, sel))
 }
 
 /// Global signature hook.
 fn try_global_signature(obj: &Object, sel: &Selector) -> Option<String> {
-    GLOBAL_SIGNATURE_HOOK.read().unwrap().and_then(|hook| hook(obj, sel))
+    GLOBAL_SIGNATURE_HOOK
+        .read()
+        .unwrap()
+        .and_then(|hook| hook(obj, sel))
 }
 
 /// Per-object forward invocation hook (not yet implemented).
@@ -634,18 +642,25 @@ fn try_per_class_forward_invocation(invocation: &mut Invocation) -> bool {
     let class = obj.class();
     // SAFETY: ClassInner is valid and allocated in arena
     let inner = unsafe { &*class.inner.as_ptr() };
-    inner.forward_invocation_hook.read().unwrap().is_some_and(|hook| {
-        hook(invocation);
-        true
-    })
+    inner
+        .forward_invocation_hook
+        .read()
+        .unwrap()
+        .is_some_and(|hook| {
+            hook(invocation);
+            true
+        })
 }
 
 /// Global forward invocation hook.
 fn try_global_forward_invocation(invocation: &mut Invocation) -> bool {
-    GLOBAL_FORWARD_INVOCATION_HOOK.read().unwrap().is_some_and(|hook| {
-        hook(invocation);
-        true
-    })
+    GLOBAL_FORWARD_INVOCATION_HOOK
+        .read()
+        .unwrap()
+        .is_some_and(|hook| {
+            hook(invocation);
+            true
+        })
 }
 
 /// Per-object does not recognize hook (not yet implemented).
@@ -665,7 +680,8 @@ fn try_per_class_does_not_recognize(obj: &Object, sel: &Selector) {
 
 /// Global does not recognize hook.
 fn try_global_does_not_recognize(obj: &Object, sel: &Selector) {
-    if let Some(hook) = GLOBAL_DOES_NOT_RECOGNIZE_HOOK.read().unwrap().as_ref() {
+    if let Some(hook) = GLOBAL_DOES_NOT_RECOGNIZE_HOOK.read().unwrap().as_ref()
+    {
         hook(obj, sel);
     }
 }
@@ -1094,6 +1110,7 @@ mod tests {
         let result = resolve_forwarding(&obj, &sel);
 
         // Should return the target
+        // FIXME: potential ub with this assertiopn failing
         assert!(matches!(result, ForwardingResult::Target(_)));
 
         // Clear hook

@@ -6,11 +6,11 @@
 //! Run with: `cargo test --test property_test -- --test-threads=1`
 
 use oxidec::runtime::{
-    Class, Object, Selector, Invocation, PooledInvocation,
-    MessageArgs, RuntimeString
+    Class, Invocation, MessageArgs, Object, PooledInvocation, RuntimeString,
+    Selector,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 static PROP_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -29,18 +29,18 @@ fn setup_prop_class() -> (Class, Object) {
 #[test]
 fn test_selector_from_arbitrary_strings() {
     let test_strings = vec![
-        "",                          // empty
-        "normalMethod",              // normal
-        "method:with:colons:",       // multiple colons
-        "methodWithArg:",            // single arg
-        "method:with:many:args:",    // many args
-        "methodWith123Numbers",      // numbers
-        "method_with_underscores",   // underscores
-        "method-WithDashes",         // dashes (invalid but should not crash)
-        "方法",                       // unicode
-        "method🚀rocket",            // emoji
-        "a",                         // single char
-        "a:b:c:d:e:f:g:h:i:j",      // many colons
+        "",                        // empty
+        "normalMethod",            // normal
+        "method:with:colons:",     // multiple colons
+        "methodWithArg:",          // single arg
+        "method:with:many:args:",  // many args
+        "methodWith123Numbers",    // numbers
+        "method_with_underscores", // underscores
+        "method-WithDashes",       // dashes (invalid but should not crash)
+        "方法",                    // unicode
+        "method🚀rocket",          // emoji
+        "a",                       // single char
+        "a:b:c:d:e:f:g:h:i:j",     // many colons
     ];
 
     for s in test_strings {
@@ -55,9 +55,9 @@ fn test_selector_from_arbitrary_strings() {
 fn test_selector_with_invalid_utf8() {
     // Test that we handle invalid UTF-8 gracefully
     let invalid_bytes = vec![
-        vec![0xFF, 0xFE],              // invalid UTF-8
-        vec![0xC0, 0x80],              // overlong encoding
-        vec![0xED, 0xA0, 0x80],        // surrogate
+        vec![0xFF, 0xFE],       // invalid UTF-8
+        vec![0xC0, 0x80],       // overlong encoding
+        vec![0xED, 0xA0, 0x80], // surrogate
     ];
 
     for bytes in invalid_bytes {
@@ -87,6 +87,7 @@ fn test_message_args_with_various_counts() {
         };
 
         // Should not crash
+        #[allow(clippy::drop_non_drop)]
         drop(args);
     }
 }
@@ -98,9 +99,6 @@ fn test_message_args_with_various_types() {
     let _args2 = MessageArgs::two(0usize, usize::MAX);
     let _args3 = MessageArgs::two(123usize, 456usize);
     let _args4 = MessageArgs::two(1usize, 2usize);
-
-    // Should not crash
-    assert!(true);
 }
 
 #[test]
@@ -144,8 +142,7 @@ fn test_class_with_various_names() {
         let unique_name = format!("{}_{}", name, id);
 
         let result = Class::new_root(&unique_name);
-        if result.is_ok() {
-            let class = result.unwrap();
+        if let Ok(class) = result {
             // Should be able to create object
             let obj = Object::new(&class);
             assert!(obj.is_ok());
@@ -193,9 +190,7 @@ fn test_object_clone_many() {
     let obj = Object::new(&class).unwrap();
 
     // Clone object many times
-    let clones: Vec<_> = (0..100)
-        .map(|_| obj.clone())
-        .collect();
+    let clones: Vec<_> = (0..100).map(|_| obj.clone()).collect();
 
     assert_eq!(clones.len(), 100);
 
@@ -252,18 +247,26 @@ fn test_pool_with_various_patterns() {
 
     // Pattern 2: Batch acquire, batch release
     let invocations: Vec<_> = (0..10)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
     drop(invocations);
 
     // Pattern 3: Interleaved
     for i in 0..10 {
         if i % 2 == 0 {
-            let inv = PooledInvocation::with_arguments(&target, &selector, &args).unwrap();
+            let inv =
+                PooledInvocation::with_arguments(&target, &selector, &args)
+                    .unwrap();
             drop(inv);
         } else {
-            let inv1 = PooledInvocation::with_arguments(&target, &selector, &args).unwrap();
-            let inv2 = PooledInvocation::with_arguments(&target, &selector, &args).unwrap();
+            let inv1 =
+                PooledInvocation::with_arguments(&target, &selector, &args)
+                    .unwrap();
+            let inv2 =
+                PooledInvocation::with_arguments(&target, &selector, &args)
+                    .unwrap();
             drop(inv1);
             drop(inv2);
         }
@@ -282,7 +285,9 @@ fn test_pool_exhaustion_recovery() {
 
     // Exhaust the pool
     let invocations: Vec<_> = (0..1000)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
 
     // Pool should still work after exhaustion
@@ -306,8 +311,8 @@ fn test_runtime_string_with_various_inputs() {
         "hello world".to_string(),
         "Lorem ipsum dolor sit amet".to_string(),
         "🚀🎉✨".to_string(),
-        "a".repeat(10),   // inline
-        "a".repeat(100),  // heap
+        "a".repeat(10),  // inline
+        "a".repeat(100), // heap
         "类".to_string(),
         "\n\t\r".to_string(),
         "\0\x01\x02".to_string(),
@@ -376,7 +381,6 @@ fn test_selector_with_special_characters() {
 
 #[test]
 fn test_concurrent_class_creation() {
-    use std::sync::Arc;
     use std::thread;
 
     let handles: Vec<_> = (0..10)
@@ -386,8 +390,7 @@ fn test_concurrent_class_creation() {
                 let class_name = format!("ConcurrentClass_{}_{}", i, id);
 
                 let class = Class::new_root(&class_name);
-                if class.is_ok() {
-                    let class = class.unwrap();
+                if let Ok(class) = class {
                     let obj = Object::new(&class);
                     obj.is_ok()
                 } else {
@@ -397,11 +400,16 @@ fn test_concurrent_class_creation() {
         })
         .collect();
 
-    let results: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let results: Vec<bool> =
+        handles.into_iter().map(|h| h.join().unwrap()).collect();
 
     // Most should succeed (no name collisions due to unique IDs)
     let success_count = results.iter().filter(|&&r| r).count();
-    assert!(success_count >= 8, "Expected at least 8 successes, got {}", success_count);
+    assert!(
+        success_count >= 8,
+        "Expected at least 8 successes, got {}",
+        success_count
+    );
 
     // Should not crash
 }
@@ -414,8 +422,7 @@ fn test_many_classes() {
         let class_name = format!("ManyClasses_{}_{}", i, id);
 
         let class = Class::new_root(&class_name);
-        if class.is_ok() {
-            let class = class.unwrap();
+        if let Ok(class) = class {
             let obj = Object::new(&class);
             assert!(obj.is_ok());
         }
@@ -435,8 +442,8 @@ fn test_deep_inheritance_chain() {
 
         if let Some(ref superclass) = current_class {
             let new_class = Class::new(&class_name, superclass);
-            if new_class.is_ok() {
-                current_class = Some(new_class.unwrap());
+            if let Ok(new_class) = new_class {
+                current_class = Some(new_class);
             }
         }
     }
@@ -453,9 +460,8 @@ fn test_memory_allocation_stress() {
     let (class, _) = setup_prop_class();
 
     // Allocate many objects
-    let objects: Vec<_> = (0..10000)
-        .map(|_| Object::new(&class).unwrap())
-        .collect();
+    let objects: Vec<_> =
+        (0..10000).map(|_| Object::new(&class).unwrap()).collect();
 
     assert_eq!(objects.len(), 10000);
 

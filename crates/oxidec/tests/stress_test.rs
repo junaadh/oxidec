@@ -9,12 +9,12 @@
 //! Run with: `cargo test --test stress_test -- --test-threads=1 --nocapture`
 
 use oxidec::runtime::{
-    Class, Object, Selector, TransparentProxy, LoggingProxy, PooledInvocation,
-    compose_proxies, MessageArgs
+    Class, LoggingProxy, MessageArgs, Object, PooledInvocation, Selector,
+    TransparentProxy, compose_proxies,
 };
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -33,6 +33,7 @@ fn setup_stress_class() -> (Class, Object) {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_deep_forwarding_chain_10() {
     let (_class, target) = setup_stress_class();
 
@@ -48,6 +49,7 @@ fn test_deep_forwarding_chain_10() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_deep_forwarding_chain_100() {
     let (_class, target) = setup_stress_class();
 
@@ -63,6 +65,7 @@ fn test_deep_forwarding_chain_100() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_deep_forwarding_chain_no_stack_overflow() {
     let (_class, target) = setup_stress_class();
 
@@ -82,6 +85,7 @@ fn test_deep_forwarding_chain_no_stack_overflow() {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_heavy_proxy_usage_100() {
     let (_class, target) = setup_stress_class();
 
@@ -93,11 +97,18 @@ fn test_heavy_proxy_usage_100() {
     // Verify all are valid
     assert_eq!(proxies.len(), 100);
     for proxy in proxies {
-        assert!(proxy.as_object().class().name().contains("TransparentProxy"));
+        assert!(
+            proxy
+                .as_object()
+                .class()
+                .name()
+                .contains("TransparentProxy")
+        );
     }
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_heavy_proxy_usage_1000() {
     let (_class, target) = setup_stress_class();
 
@@ -111,6 +122,7 @@ fn test_heavy_proxy_usage_1000() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_heavy_proxy_usage_10000() {
     let (_class, target) = setup_stress_class();
 
@@ -124,6 +136,7 @@ fn test_heavy_proxy_usage_10000() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_heavy_proxy_composition() {
     let (_class, target) = setup_stress_class();
 
@@ -140,6 +153,7 @@ fn test_heavy_proxy_composition() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_proxy_memory_leak() {
     let (_class, target) = setup_stress_class();
 
@@ -148,9 +162,6 @@ fn test_proxy_memory_leak() {
         let proxy = TransparentProxy::new(&target).unwrap();
         drop(proxy);
     }
-
-    // If we reach here without crashing or running out of memory, no leak
-    assert!(true);
 }
 
 // ============================================================================
@@ -158,6 +169,7 @@ fn test_proxy_memory_leak() {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_pool_exhaustion_100() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -168,7 +180,9 @@ fn test_pool_exhaustion_100() {
 
     // Acquire 100 invocations (will exhaust pool quickly)
     let invocations: Vec<_> = (0..100)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
 
     assert_eq!(invocations.len(), 100);
@@ -181,6 +195,7 @@ fn test_pool_exhaustion_100() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_pool_exhaustion_1000() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -190,13 +205,16 @@ fn test_pool_exhaustion_1000() {
 
     // Acquire 1000 invocations
     let invocations: Vec<_> = (0..1000)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
 
     assert_eq!(invocations.len(), 1000);
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_pool_exhaustion_and_reuse() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -206,13 +224,17 @@ fn test_pool_exhaustion_and_reuse() {
 
     // First batch
     let invocations1: Vec<_> = (0..100)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
     drop(invocations1);
 
     // Second batch should reuse from pool
-    let invocations2: Vec<_> = (0..100)
-        .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+    let _invocations2: Vec<_> = (0..100)
+        .map(|_| {
+            PooledInvocation::with_arguments(&target, &selector, &args).unwrap()
+        })
         .collect();
 
     // Verify high hit rate after first batch
@@ -228,6 +250,7 @@ fn test_pool_exhaustion_and_reuse() {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_concurrent_proxy_creation() {
     let (_class, target) = setup_stress_class();
     let target = Arc::new(target);
@@ -251,6 +274,7 @@ fn test_concurrent_proxy_creation() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_concurrent_pool_access() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -267,7 +291,12 @@ fn test_concurrent_pool_access() {
             let args = args.clone();
             thread::spawn(move || {
                 let invocations: Vec<_> = (0..invocations_per_thread)
-                    .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+                    .map(|_| {
+                        PooledInvocation::with_arguments(
+                            &target, &selector, &args,
+                        )
+                        .unwrap()
+                    })
                     .collect();
                 invocations.len()
             })
@@ -279,6 +308,7 @@ fn test_concurrent_pool_access() {
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_concurrent_pool_exhaustion() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -297,7 +327,12 @@ fn test_concurrent_pool_exhaustion() {
             let args = args.clone();
             thread::spawn(move || {
                 let invocations: Vec<_> = (0..invocations_per_thread)
-                    .map(|_| PooledInvocation::with_arguments(&target, &selector, &args).unwrap())
+                    .map(|_| {
+                        PooledInvocation::with_arguments(
+                            &target, &selector, &args,
+                        )
+                        .unwrap()
+                    })
                     .collect();
                 invocations.len()
             })
@@ -307,7 +342,10 @@ fn test_concurrent_pool_exhaustion() {
     let total: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
     assert_eq!(total, num_threads * invocations_per_thread);
 
-    println!("Concurrent pool exhaustion test completed: {} invocations created", total);
+    println!(
+        "Concurrent pool exhaustion test completed: {} invocations created",
+        total
+    );
 }
 
 // ============================================================================
@@ -315,6 +353,7 @@ fn test_concurrent_pool_exhaustion() {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_stress_performance_proxy_creation() {
     let (_class, target) = setup_stress_class();
     let iterations = 10000;
@@ -330,10 +369,15 @@ fn test_stress_performance_proxy_creation() {
 
     // In debug mode, proxy creation is slower. In release mode it's < 1μs.
     // This test validates it's not catastrophically slow.
-    assert!(avg_ns < 50_000, "Proxy creation too slow: {} ns (debug mode)", avg_ns);
+    assert!(
+        avg_ns < 50_000,
+        "Proxy creation too slow: {} ns (debug mode)",
+        avg_ns
+    );
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_stress_performance_pool_acquisition() {
     let (_class, target) = setup_stress_class();
     let selector = Selector::from_str("testMethod:").unwrap();
@@ -349,7 +393,8 @@ fn test_stress_performance_pool_acquisition() {
     let iterations = 10000;
     let start = Instant::now();
     for _ in 0..iterations {
-        let _ = PooledInvocation::with_arguments(&target, &selector, &args).unwrap();
+        let _ = PooledInvocation::with_arguments(&target, &selector, &args)
+            .unwrap();
     }
     let duration = start.elapsed();
 
@@ -362,10 +407,16 @@ fn test_stress_performance_pool_acquisition() {
     #[cfg(not(debug_assertions))]
     let threshold = 500;
 
-    assert!(avg_ns < threshold, "Pool acquisition too slow: {} ns (threshold: {} ns)", avg_ns, threshold);
+    assert!(
+        avg_ns < threshold,
+        "Pool acquisition too slow: {} ns (threshold: {} ns)",
+        avg_ns,
+        threshold
+    );
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_stress_performance_composition() {
     let (_class, target) = setup_stress_class();
 
@@ -388,7 +439,11 @@ fn test_stress_performance_composition() {
 
     // Composition should complete in reasonable time
     // In debug mode or with contention, can be slower. Use generous threshold.
-    assert!(avg_ns < 500_000, "Composition too slow: {} ns (debug mode with contention)", avg_ns);
+    assert!(
+        avg_ns < 500_000,
+        "Composition too slow: {} ns (debug mode with contention)",
+        avg_ns
+    );
 }
 
 // ============================================================================
@@ -396,6 +451,7 @@ fn test_stress_performance_composition() {
 // ============================================================================
 
 #[test]
+#[cfg(not(miri))]
 fn test_rapid_proxy_creation_destruction() {
     let (_class, target) = setup_stress_class();
 
@@ -404,12 +460,10 @@ fn test_rapid_proxy_creation_destruction() {
         let proxy = TransparentProxy::new(&target).unwrap();
         drop(proxy);
     }
-
-    // If we reach here, no crashes or memory corruption
-    assert!(true);
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_mixed_proxy_types() {
     let (_class, target) = setup_stress_class();
 
@@ -420,18 +474,17 @@ fn test_mixed_proxy_types() {
         } else if i % 3 == 1 {
             let _proxy = LoggingProxy::new(&target, |sel, _args| {
                 println!("Logging: {:?}", sel.name());
-            }).unwrap();
+            })
+            .unwrap();
         } else {
             // RemoteProxy (just for variety)
             let _proxy = oxidec::runtime::RemoteProxy::new(i as u64, i as u64);
         }
     }
-
-    // If we reach here, all proxy types work
-    assert!(true);
 }
 
 #[test]
+#[cfg(not(miri))]
 fn test_empty_and_single_proxy_composition() {
     let (_class, target) = setup_stress_class();
 

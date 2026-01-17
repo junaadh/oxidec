@@ -7,7 +7,8 @@
 use criterion::{
     BenchmarkId, Criterion, black_box, criterion_group, criterion_main,
 };
-use oxidec::runtime::{Arena, arena::LocalArena};
+use oxidec::Arena;
+use oxidex_mem::arena::LocalArena;
 
 /// Benchmark sequential allocations of different sizes.
 ///
@@ -67,7 +68,7 @@ fn bench_chunk_growth(c: &mut Criterion) {
 
     group.bench_function("large_allocations", |b| {
         b.iter(|| {
-            let arena = Arena::with_config(1024, 16);
+            let arena = Arena::new(1024);
             // Allocate enough to force chunk growth
             for _ in 0..100 {
                 arena.alloc(black_box(64));

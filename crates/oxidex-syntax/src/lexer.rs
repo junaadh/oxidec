@@ -34,6 +34,7 @@
 use crate::error::{LexerError, LexerResult};
 use crate::span::Span;
 use crate::token::{Token, TokenKind};
+use crate::keywords;
 use oxidex_mem::{StringInterner, Symbol};
 use std::iter::Peekable;
 use std::str::Chars;
@@ -106,7 +107,7 @@ impl<'input> Lexer<'input> {
             column: 1,
             tokens: Vec::new(),
             errors: Vec::new(),
-            interner: StringInterner::new(), // Pre-interns keywords
+            interner: StringInterner::with_pre_interned(keywords::KEYWORDS),
         }
     }
 
@@ -209,6 +210,89 @@ impl<'input> Lexer<'input> {
         &self.interner
     }
 
+    /// Consumes the lexer and returns the string interner.
+    ///
+    /// This is useful when you need to pass the interner to the parser
+    /// after lexing is complete.
+    #[must_use]
+    pub fn into_interner(self) -> StringInterner {
+        self.interner
+    }
+
+    /// Returns a clone of the string interner.
+    ///
+    /// This is useful when you need to pass the interner to the parser
+    /// after lexing is complete but don't want to consume the lexer.
+    #[must_use]
+    pub fn clone_interner(&self) -> StringInterner {
+        // Create a new interner and copy all interned strings
+        let mut new_interner = StringInterner::with_pre_interned(keywords::KEYWORDS);
+        for id in 0..self.interner.len() {
+            let sym = Symbol::new(id as u32);
+            if let Some(s) = self.interner.resolve(sym) {
+                new_interner.intern(s);
+            }
+        }
+        new_interner
+    }
+
+    /// Tokenizes the source code and returns both tokens and the interner.
+    ///
+    /// This is a convenience method that combines `lex()` and `into_interner()`.
+    /// It's useful when you need both the tokens and the interner for parsing.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use oxidex_syntax::Lexer;
+    ///
+    /// let source = "let x = 42";
+    /// let lexer = Lexer::new(source);
+    /// let (tokens, interner) = lexer.lex_with_interner().unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `LexerError` if the source contains invalid characters that
+    /// cannot be recovered from.
+    pub fn lex_with_interner(mut self) -> LexerResult<(Vec<Token>, StringInterner)> {
+        // Initialize the character iterator
+        self.chars = Some(self.input.chars().peekable());
+
+        // Main tokenization loop
+        while self.peek().is_some() {
+            // Skip whitespace
+            self.skip_whitespace();
+
+            // Check for EOF
+            if self.peek().is_none() {
+                break;
+            }
+
+            // Get next token
+            match self.next_token() {
+                Ok(token) => self.tokens.push(token),
+                Err(err) => {
+                    self.errors.push(err);
+                    // Attempt recovery by skipping to next known token
+                    self.recover();
+                }
+            }
+        }
+
+        // Add EOF token
+        let eof_span = Span::point(self.position, self.line, self.column);
+        self.tokens.push(Token::new(TokenKind::EOF, eof_span));
+
+        // Return result with interner
+        if self.errors.is_empty() {
+            Ok((self.tokens, self.interner))
+        } else {
+            // Return first error for now (we could enhance this to return all errors)
+            Err(self.errors.into_iter().next().unwrap())
+        }
+    }
+
     /// Peeks at the next character without consuming it.
     fn peek(&mut self) -> Option<char> {
         self.chars.as_mut()?.peek().copied()
@@ -266,8 +350,26 @@ impl<'input> Lexer<'input> {
         })?;
 
         let kind = match ch {
-            // Identifiers and keywords (start with letter or underscore)
-            'a'..='z' | 'A'..='Z' | '_' => self.read_identifier(),
+            // Underscore (wildcard pattern)
+            '_' => {
+                self.bump();
+                // Check if it's just "_" or the start of an identifier
+                if let Some(next_ch) = self.peek() {
+                    if next_ch.is_alphanumeric() || next_ch == '_' {
+                        // It's the start of an identifier
+                        self.read_identifier()
+                    } else {
+                        // Just a standalone underscore
+                        TokenKind::Underscore
+                    }
+                } else {
+                    // Just underscore at EOF
+                    TokenKind::Underscore
+                }
+            }
+
+            // Identifiers (start with letter)
+            'a'..='z' | 'A'..='Z' => self.read_identifier(),
 
             // Numeric literals (start with digit)
             '0'..='9' => self.read_number(),
@@ -346,7 +448,7 @@ impl<'input> Lexer<'input> {
                     self.bump();
                     TokenKind::LtEq
                 } else {
-                    TokenKind::Lt
+                    TokenKind::LAngle
                 }
             }
             '>' => {
@@ -355,7 +457,7 @@ impl<'input> Lexer<'input> {
                     self.bump();
                     TokenKind::GtEq
                 } else {
-                    TokenKind::Gt
+                    TokenKind::RAngle
                 }
             }
             '&' => {
@@ -364,18 +466,7 @@ impl<'input> Lexer<'input> {
                     self.bump();
                     TokenKind::AmpAmp
                 } else {
-                    // Single ampersand - error for now
-                    return Err(LexerError::UnknownChar {
-                        ch: '&',
-                        span: Span::new(
-                            start,
-                            self.position,
-                            start_line,
-                            start_col,
-                            self.line,
-                            self.column,
-                        ),
-                    });
+                    TokenKind::Amp
                 }
             }
             '|' => {
@@ -384,18 +475,7 @@ impl<'input> Lexer<'input> {
                     self.bump();
                     TokenKind::PipePipe
                 } else {
-                    // Single pipe - error for now
-                    return Err(LexerError::UnknownChar {
-                        ch: '|',
-                        span: Span::new(
-                            start,
-                            self.position,
-                            start_line,
-                            start_col,
-                            self.line,
-                            self.column,
-                        ),
-                    });
+                    TokenKind::Pipe
                 }
             }
             '(' => {
@@ -424,7 +504,12 @@ impl<'input> Lexer<'input> {
             }
             '.' => {
                 self.bump();
-                TokenKind::Dot
+                if let Some('.') = self.peek() {
+                    self.bump();
+                    TokenKind::DotDot
+                } else {
+                    TokenKind::Dot
+                }
             }
             ':' => {
                 self.bump();
@@ -438,6 +523,14 @@ impl<'input> Lexer<'input> {
             ',' => {
                 self.bump();
                 TokenKind::Comma
+            }
+            ';' => {
+                self.bump();
+                TokenKind::Semicolon
+            }
+            '?' => {
+                self.bump();
+                TokenKind::Question
             }
             _ => {
                 // Unknown character
@@ -508,6 +601,7 @@ impl<'input> Lexer<'input> {
             "comptime" => TokenKind::Comptime,
             "const" => TokenKind::Const,
             "static" => TokenKind::Static,
+            "type" => TokenKind::Type,
             "pub" => TokenKind::Pub,
             "prv" => TokenKind::Prv,
             "true" => TokenKind::BoolLiteral(true),
@@ -525,7 +619,7 @@ impl<'input> Lexer<'input> {
         // Check for hex (0x) or binary (0b) prefix
         if self.position - start == 1 && self.input.as_bytes()[start] == b'0' {
             match self.peek() {
-                Some('x') | Some('X') => {
+                Some('x' | 'X') => {
                     // Hexadecimal literal
                     self.bump(); // Consume 'x'
                     while let Some(ch) = self.peek() {
@@ -543,7 +637,7 @@ impl<'input> Lexer<'input> {
 
                     return TokenKind::IntegerLiteral(value_sym, suffix);
                 }
-                Some('b') | Some('B') => {
+                Some('b' | 'B') => {
                     // Binary literal
                     self.bump(); // Consume 'b'
                     while let Some(ch) = self.peek() {
@@ -825,7 +919,7 @@ mod tests {
     impl TestInterner {
         fn new() -> Self {
             Self {
-                interner: StringInterner::new(),
+                interner: StringInterner::with_pre_interned(keywords::KEYWORDS),
             }
         }
 
@@ -917,8 +1011,8 @@ mod tests {
 
         assert_eq!(result[0].kind, TokenKind::EqEq);
         assert_eq!(result[1].kind, TokenKind::BangEq);
-        assert_eq!(result[2].kind, TokenKind::Lt);
-        assert_eq!(result[3].kind, TokenKind::Gt);
+        assert_eq!(result[2].kind, TokenKind::LAngle);
+        assert_eq!(result[3].kind, TokenKind::RAngle);
         assert_eq!(result[4].kind, TokenKind::LtEq);
     }
 
@@ -1551,8 +1645,8 @@ mod tests {
 
         assert_eq!(result[0].kind, TokenKind::EqEq);
         assert_eq!(result[1].kind, TokenKind::BangEq);
-        assert_eq!(result[2].kind, TokenKind::Lt);
-        assert_eq!(result[3].kind, TokenKind::Gt);
+        assert_eq!(result[2].kind, TokenKind::LAngle);
+        assert_eq!(result[3].kind, TokenKind::RAngle);
         assert_eq!(result[4].kind, TokenKind::LtEq);
         assert_eq!(result[5].kind, TokenKind::GtEq);
     }
@@ -1630,7 +1724,8 @@ mod tests {
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 
-        assert_eq!(result[0].kind, TokenKind::Ident(intern_for_test("_")));
+        // Underscore is now tokenized as Underscore, not Ident
+        assert_eq!(result[0].kind, TokenKind::Underscore);
     }
 
     #[test]

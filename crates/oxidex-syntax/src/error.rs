@@ -99,6 +99,18 @@ impl fmt::Display for LexerError {
 
 impl std::error::Error for LexerError {}
 
+impl crate::span::Spanned for LexerError {
+    fn span(&self) -> Span {
+        match self {
+            Self::UnknownChar { span, .. }
+            | Self::InvalidNumeric { span, .. } => *span,
+            Self::UnterminatedString { start }
+            | Self::UnterminatedComment { start }
+            | Self::UnterminatedInterpolation { start } => *start,
+        }
+    }
+}
+
 /// Errors that can occur during parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParserError {
@@ -233,6 +245,23 @@ impl fmt::Display for ParserError {
 }
 
 impl std::error::Error for ParserError {}
+
+impl crate::span::Spanned for ParserError {
+    fn span(&self) -> Span {
+        match self {
+            Self::UnexpectedToken { span, .. }
+            | Self::ExpectedIdentifier { span, .. }
+            | Self::ExpectedType { span, .. }
+            | Self::ExpectedExpression { span, .. }
+            | Self::ExpectedStatement { span, .. }
+            | Self::InvalidPattern { span, .. }
+            | Self::MissingDelimiter { span, .. }
+            | Self::InvalidGenericParams { span, .. }
+            | Self::InvalidTypeAnnotation { span, .. }
+            | Self::MismatchedTypes { span, .. } => *span,
+        }
+    }
+}
 
 /// Combined syntax error for the frontend.
 ///

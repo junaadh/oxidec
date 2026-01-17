@@ -116,7 +116,7 @@ mod global_arena_tests {
         drop(arena_clone);
 
         // Original arena still has the allocation
-        assert_eq!(arena.stats().total_allocated > 0, true);
+        assert!(arena.stats().total_allocated > 0);
     }
 
     /// Test GlobalArena with many allocations
@@ -144,7 +144,12 @@ mod global_arena_tests {
         let _data3: &mut u32 = arena.alloc(200);
 
         let stats = arena.stats();
-        assert!(stats.total_allocated >= std::mem::size_of::<u32>() + std::mem::size_of::<u64>() + std::mem::size_of::<u32>());
+        assert!(
+            stats.total_allocated
+                >= std::mem::size_of::<u32>()
+                    + std::mem::size_of::<u64>()
+                    + std::mem::size_of::<u32>()
+        );
         assert!(stats.total_capacity >= stats.total_allocated);
     }
 }
