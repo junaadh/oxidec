@@ -96,8 +96,20 @@ pub enum TokenKind {
     /// Private visibility (file-private)
     Prv,
 
+    /// Self keyword (capital S) - type alias for current type
+    SelfType,
+
+    /// self keyword (lowercase) - reference to current instance
+    SelfValue,
+
     /// Underscore wildcard
     Underscore,
+
+    /// Initializer declaration
+    Init,
+
+    /// Case keyword for enum variants
+    Case,
 
     // ===== Literals =====
     /// Identifier (variable name, function name, etc.)
@@ -371,7 +383,12 @@ impl TokenKind {
             Self::EqEq | Self::BangEq => Some(4),
 
             // Comparison
-            Self::Lt | Self::Gt | Self::LAngle | Self::RAngle | Self::LtEq | Self::GtEq => Some(5),
+            Self::Lt
+            | Self::Gt
+            | Self::LAngle
+            | Self::RAngle
+            | Self::LtEq
+            | Self::GtEq => Some(5),
 
             // Additive
             Self::Plus | Self::Minus => Some(6),
@@ -410,9 +427,15 @@ impl fmt::Display for TokenKind {
             Self::Type => write!(f, "type"),
             Self::Pub => write!(f, "pub"),
             Self::Prv => write!(f, "prv"),
+            Self::SelfType => write!(f, "Self"),
+            Self::SelfValue => write!(f, "self"),
+            Self::Init => write!(f, "init"),
+            Self::Case => write!(f, "case"),
 
             // Literals
-            Self::Ident(sym) => write!(f, "identifier(Symbol({}))", sym.as_u32()),
+            Self::Ident(sym) => {
+                write!(f, "identifier(Symbol({}))", sym.as_u32())
+            }
             Self::IntegerLiteral(val, suffix) => {
                 write!(f, "integer(Symbol({}))", val.as_u32())?;
                 if let Some(suf) = suffix {
@@ -429,7 +452,9 @@ impl fmt::Display for TokenKind {
                     Ok(())
                 }
             }
-            Self::StringLiteral(sym) => write!(f, "string(Symbol({}))", sym.as_u32()),
+            Self::StringLiteral(sym) => {
+                write!(f, "string(Symbol({}))", sym.as_u32())
+            }
             Self::BoolLiteral(b) => write!(f, "{b}"),
             Self::Nil => write!(f, "nil"),
 

@@ -3,14 +3,14 @@
 //! This module defines all reserved keywords in the `OxideX` language.
 //! Keywords are pre-interned in the string interner for fast lookup.
 
-/// All 20 `OxideX` keywords in order for consistent IDs (0-19).
+/// All 24 `OxideX` keywords in order for consistent IDs (0-23).
 ///
 /// These are reserved words that cannot be used as identifiers.
 /// They are pre-interned in the string interner for fast keyword detection.
 pub const KEYWORDS: &[&str] = &[
     "let", "mut", "fn", "struct", "class", "enum", "protocol", "impl",
     "return", "if", "guard", "match", "for", "while", "comptime", "const",
-    "static", "type", "pub", "prv",
+    "static", "type", "pub", "prv", "self", "Self", "init", "case",
 ];
 
 /// Number of keywords.

@@ -9,7 +9,7 @@ You are assisting with the OxideX project—a modern programming language combin
 
 OxideX is building:
 - **OxideC Runtime** (Phase 1-4c: COMPLETE) - Safe, high-performance dynamic runtime
-- **OxideX Language** (Phase 5a: COMPLETE, Phase 5b-13: Planned) - Modern syntax with message-based semantics
+- **OxideX Language** (Phase 5a: COMPLETE, Phase 5b: IN PROGRESS, Phase 6-13: Planned) - Modern syntax with message-based semantics
 
 ### OxideC Runtime
 - **Dynamic Dispatch** with late binding and method caching
@@ -88,7 +88,7 @@ oxidex/
 │   │   ├── benches/             # Performance benchmarks
 │   │   └── ARCHITECTURE.md      # Design documentation
 │   │
-│   ├── oxidex-syntax/            # Language syntax (Phase 5b: PLANNED)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: IN PROGRESS)
 │   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
 │   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
 │   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)
@@ -172,8 +172,25 @@ crates/oxidec/src/runtime/
 - [x] MIRI validation (157 tests passing)
 - [x] Comprehensive documentation
 
-### Phase 5b-13: Language Implementation (Planned)
-- [ ] Language frontend (syntax, parser, AST)
+### Phase 5b: Language Syntax (IN PROGRESS)
+- [x] Lexer with 24 keywords and all token types
+- [x] Parser with full grammar support
+- [x] AST for all declaration types
+- [x] Enum support with `case` keyword
+- [x] Enum methods (directly in body and impl blocks)
+- [x] Method visibility resolution (most restrictive of parent and method)
+- [x] Labeled parameters (Swift-style)
+- [x] `self` and `Self` keywords
+- [x] `init` keyword for initializers
+- [x] `mut fn` for mutable methods
+- [x] `static fn` for static methods
+- [x] 208 unit tests passing
+- [x] 23 integration tests passing
+- [ ] Pretty printer (AST → source)
+- [ ] Error recovery improvements
+- [ ] Complete test coverage for all edge cases
+
+### Phase 5c-13: Language Implementation (Planned)
 - [ ] Type checker (inference, validation)
 - [ ] Code generation (AST → runtime calls)
 - [ ] Interpreter (REPL)
@@ -259,9 +276,9 @@ All code must pass MIRI validation with strict provenance to ensure:
 
 - **Edition**: 2024 (Rust stable)
 - **Target**: Message-based dynamic language with systems-level performance
-- **Status**: Runtime Phase 4c Complete (Alpha 0.4), Language Phase 5a Complete (Alpha 0.5), Language Phase 5b-13 Planned
-- **Next Milestone**: Phase 5b - Lexer, Parser, and AST Implementation
-- **Testing**: See [RFC.md](RFC.md) for test counts and coverage
+- **Status**: Runtime Phase 4c Complete (Alpha 0.4), Language Phase 5a Complete (Alpha 0.5), Language Phase 5b In Progress (Alpha 0.6)
+- **Current Work**: Lexer, Parser, and AST implementation (208 unit tests, 23 integration tests)
+- **Testing**: 231 tests passing in oxidex-syntax
 - **MIRI**: All tests pass with strict provenance validation
 
 ---

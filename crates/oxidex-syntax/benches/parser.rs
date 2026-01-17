@@ -3,9 +3,12 @@
 //! These benchmarks measure the throughput of parsing various OxideX constructs.
 //! Target: >50k LOC/sec according to RFC requirements.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use oxidex_syntax::{Lexer, Parser};
+use criterion::{
+    BenchmarkId, Criterion, Throughput, black_box, criterion_group,
+    criterion_main,
+};
 use oxidex_mem::LocalArena;
+use oxidex_syntax::{Lexer, Parser};
 
 /// Benchmark parsing simple expressions
 fn bench_simple_expressions(c: &mut Criterion) {
@@ -85,15 +88,19 @@ fn process<T, U>(data: T, transform: fn(T) -> U) -> U {
         ("complex", complex_fn),
     ] {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -131,15 +138,19 @@ struct HashMap<K: Hash, V: Clone> {
         ("complex", complex_struct),
     ] {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -178,15 +189,19 @@ enum Expr {
         ("complex", complex_enum),
     ] {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -217,17 +232,23 @@ for i in 0..10 {
 
     let mut group = c.benchmark_group("parse/control_flow");
 
-    for (name, source) in [("if", if_expr), ("match", match_expr), ("loop", loop_expr)] {
+    for (name, source) in
+        [("if", if_expr), ("match", match_expr), ("loop", loop_expr)]
+    {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -263,15 +284,19 @@ match result {
         ("complex", complex_pattern),
     ] {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -295,17 +320,23 @@ fn process<T: Clone, U: Display>(x: T, y: U) -> Result<T, U> {
 
     let mut group = c.benchmark_group("parse/generics");
 
-    for (name, source) in [("simple", simple_generic), ("complex", complex_generic)] {
+    for (name, source) in
+        [("simple", simple_generic), ("complex", complex_generic)]
+    {
         group.throughput(Throughput::Bytes(source.len() as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(name), source, |b, src| {
-            b.iter(|| {
-                let arena = LocalArena::new(8192);
-                let lexer = Lexer::new(black_box(src));
-                let (tokens, interner) = lexer.lex_with_interner().unwrap();
-                let mut parser = Parser::new(tokens, src, interner, arena);
-                black_box(parser.parse_program())
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            source,
+            |b, src| {
+                b.iter(|| {
+                    let arena = LocalArena::new(8192);
+                    let lexer = Lexer::new(black_box(src));
+                    let (tokens, interner) = lexer.lex_with_interner().unwrap();
+                    let mut parser = Parser::new(tokens, src, interner, arena);
+                    black_box(parser.parse_program())
+                })
+            },
+        );
     }
 
     group.finish();
@@ -346,7 +377,8 @@ fn main() {
             let arena = LocalArena::new(8192);
             let lexer = Lexer::new(black_box(small_program));
             let (tokens, interner) = lexer.lex_with_interner().unwrap();
-            let mut parser = Parser::new(tokens, small_program, interner, arena);
+            let mut parser =
+                Parser::new(tokens, small_program, interner, arena);
             black_box(parser.parse_program())
         })
     });

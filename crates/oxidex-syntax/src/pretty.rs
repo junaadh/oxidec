@@ -6,8 +6,8 @@
 //! - Round-trip testing (parse → print → parse)
 //! - AST inspection
 
-use crate::ast::{Expr, Stmt, Type};
 use crate::ast::expr::InterpolationPart;
+use crate::ast::{Expr, Stmt, Type};
 use oxidex_mem::StringInterner;
 use std::fmt;
 
@@ -218,9 +218,7 @@ impl PrettyPrinter {
             }
 
             Expr::Match {
-                scrutinee,
-                arms,
-                ..
+                scrutinee, arms, ..
             } => {
                 let scrutinee_str = self.print_expr(scrutinee);
                 self.indent_level += 1;
@@ -278,8 +276,11 @@ impl PrettyPrinter {
                 ..
             } => {
                 let receiver_str = self.print_expr(receiver);
-                let method_text: String =
-                    self.interner.resolve(*method).unwrap_or("<unknown>").to_string();
+                let method_text: String = self
+                    .interner
+                    .resolve(*method)
+                    .unwrap_or("<unknown>")
+                    .to_string();
                 let mut args_strings = Vec::new();
                 for arg in args {
                     if let Some(label) = arg.label {
@@ -299,23 +300,27 @@ impl PrettyPrinter {
             }
 
             Expr::Struct {
-                type_path,
-                fields,
-                ..
+                type_path, fields, ..
             } => {
                 let type_str = type_path
                     .iter()
-                    .map(|sym| self.interner.resolve(*sym).unwrap_or("<unknown>"))
+                    .map(|sym| {
+                        self.interner.resolve(*sym).unwrap_or("<unknown>")
+                    })
                     .collect::<Vec<_>>()
                     .join("::");
                 let mut fields_strings = Vec::new();
                 for field in fields {
-                    let name_text: String =
-                        self.interner.resolve(field.name).unwrap_or("<unknown>").to_string();
+                    let name_text: String = self
+                        .interner
+                        .resolve(field.name)
+                        .unwrap_or("<unknown>")
+                        .to_string();
                     match field.value {
                         Some(value) => {
                             let value_str = self.print_expr(value);
-                            fields_strings.push(format!("{name_text}: {value_str}"));
+                            fields_strings
+                                .push(format!("{name_text}: {value_str}"));
                         }
                         None => {
                             // Shorthand initialization
@@ -335,11 +340,16 @@ impl PrettyPrinter {
             } => {
                 let type_str = type_path
                     .iter()
-                    .map(|sym| self.interner.resolve(*sym).unwrap_or("<unknown>"))
+                    .map(|sym| {
+                        self.interner.resolve(*sym).unwrap_or("<unknown>")
+                    })
                     .collect::<Vec<_>>()
                     .join("::");
-                let variant_text: String =
-                    self.interner.resolve(*variant).unwrap_or("<unknown>").to_string();
+                let variant_text: String = self
+                    .interner
+                    .resolve(*variant)
+                    .unwrap_or("<unknown>")
+                    .to_string();
                 match payload {
                     Some(inner) => {
                         let inner_str = self.print_expr(inner);
@@ -367,8 +377,10 @@ impl PrettyPrinter {
                 for part in parts {
                     match part {
                         InterpolationPart::Text(sym) => {
-                            let text =
-                                self.interner.resolve(*sym).unwrap_or("<unknown>");
+                            let text = self
+                                .interner
+                                .resolve(*sym)
+                                .unwrap_or("<unknown>");
                             result.push_str(text);
                         }
                         InterpolationPart::Expr(expr) => {
@@ -380,7 +392,7 @@ impl PrettyPrinter {
                 }
                 result.push('"');
                 result
-            },
+            }
         }
     }
 
@@ -405,8 +417,11 @@ impl PrettyPrinter {
                 init,
                 ..
             } => {
-                let name_text: String =
-                    self.interner.resolve(*name).unwrap_or("<unknown>").to_string();
+                let name_text: String = self
+                    .interner
+                    .resolve(*name)
+                    .unwrap_or("<unknown>")
+                    .to_string();
                 let type_str = type_annotation
                     .as_ref()
                     .map(|t| format!(": {}", self.print_type(t)))
@@ -425,8 +440,11 @@ impl PrettyPrinter {
                 init,
                 ..
             } => {
-                let name_text: String =
-                    self.interner.resolve(*name).unwrap_or("<unknown>").to_string();
+                let name_text: String = self
+                    .interner
+                    .resolve(*name)
+                    .unwrap_or("<unknown>")
+                    .to_string();
                 let type_str = type_annotation
                     .as_ref()
                     .map(|t| format!(": {}", self.print_type(t)))
@@ -450,9 +468,7 @@ impl PrettyPrinter {
                 match else_branch {
                     Some(else_expr) => {
                         let else_str = self.print_expr(else_expr);
-                        format!(
-                            "if {condition_str} {then_str} else {else_str}"
-                        )
+                        format!("if {condition_str} {then_str} else {else_str}")
                     }
                     None => format!("if {condition_str} {then_str}"),
                 }
@@ -469,9 +485,7 @@ impl PrettyPrinter {
             }
 
             Stmt::Match {
-                scrutinee,
-                arms,
-                ..
+                scrutinee, arms, ..
             } => {
                 let scrutinee_str = self.print_expr(scrutinee);
                 self.indent_level += 1;
@@ -519,9 +533,7 @@ impl PrettyPrinter {
                 format!("while {condition_str} {body_str}")
             }
 
-            Stmt::Assign {
-                target, value, ..
-            } => {
+            Stmt::Assign { target, value, .. } => {
                 let target_str = self.print_expr(target);
                 let value_str = self.print_expr(value);
                 format!("{target_str} = {value_str};")
@@ -560,7 +572,9 @@ impl PrettyPrinter {
             }
 
             Type::Function {
-                params, return_type, ..
+                params,
+                return_type,
+                ..
             } => {
                 let params_str = params
                     .iter()
@@ -571,9 +585,7 @@ impl PrettyPrinter {
                 format!("fn({params_str}) -> {return_str}")
             }
 
-            Type::Array {
-                element, size, ..
-            } => {
+            Type::Array { element, size, .. } => {
                 let elem_str = self.print_type(element);
                 match size {
                     Some(sym) => {
@@ -596,18 +608,7 @@ impl PrettyPrinter {
                 format!("{inner_str}?")
             }
 
-            Type::Reference {
-                inner, mutable, ..
-            } => {
-                let inner_str = self.print_type(inner);
-                if *mutable {
-                    format!("mut {inner_str}")
-                } else {
-                    format!("&{inner_str}")
-                }
-            }
-
-            Type::Inferred { .. } => "_".to_string(),
+            Type::SelfType { .. } => "Self".to_string(),
         }
     }
 
@@ -631,9 +632,7 @@ impl PrettyPrinter {
                 }
             }
             crate::ast::Pattern::Struct {
-                type_path,
-                fields,
-                ..
+                type_path, fields, ..
             } => {
                 let type_str = type_path
                     .iter()
@@ -643,8 +642,10 @@ impl PrettyPrinter {
                 let fields_str = fields
                     .iter()
                     .map(|f| {
-                        let name =
-                            self.interner.resolve(f.name).unwrap_or("<unknown>");
+                        let name = self
+                            .interner
+                            .resolve(f.name)
+                            .unwrap_or("<unknown>");
                         if let Some(pattern) = &f.pattern {
                             format!("{name}: {}", self.print_pattern(pattern))
                         } else {
@@ -671,15 +672,16 @@ impl PrettyPrinter {
                     self.interner.resolve(*variant).unwrap_or("<unknown>");
                 match payload {
                     Some(inner) => {
-                        format!("{type_str}::{variant_text}({})", self.print_pattern(inner))
+                        format!(
+                            "{type_str}::{variant_text}({})",
+                            self.print_pattern(inner)
+                        )
                     }
                     None => format!("{type_str}::{variant_text}"),
                 }
             }
 
-            crate::ast::Pattern::Tuple {
-                elements, ..
-            } => {
+            crate::ast::Pattern::Tuple { elements, .. } => {
                 let elems_str = elements
                     .iter()
                     .map(|p| self.print_pattern(p))
@@ -687,9 +689,7 @@ impl PrettyPrinter {
                     .join(", ");
                 format!("({elems_str})")
             }
-            crate::ast::Pattern::Array {
-                elements, rest, ..
-            } => {
+            crate::ast::Pattern::Array { elements, rest, .. } => {
                 let elems_str = elements
                     .iter()
                     .map(|p| self.print_pattern(p))
@@ -703,7 +703,11 @@ impl PrettyPrinter {
             }
 
             crate::ast::Pattern::Or { left, right, .. } => {
-                format!("{} | {}", self.print_pattern(left), self.print_pattern(right))
+                format!(
+                    "{} | {}",
+                    self.print_pattern(left),
+                    self.print_pattern(right)
+                )
             }
         }
     }
@@ -719,9 +723,9 @@ impl fmt::Display for Expr<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Span;
     use crate::ast::{Expr, Type};
     use crate::keywords;
-    use crate::Span;
 
     // Helper function to create a printer with pre-interned keywords
     fn printer() -> PrettyPrinter {
@@ -979,14 +983,5 @@ mod tests {
         let printer = PrettyPrinter::new(interner);
         assert_eq!(printer.print_type(&ty), "Int?");
     }
-
-    #[test]
-    fn test_print_type_inferred() {
-        let ty = Type::Inferred {
-            span: Span::new(0, 1, 1, 1, 1, 2),
-        };
-
-        let printer = printer();
-        assert_eq!(printer.print_type(&ty), "_");
-    }
 }
+

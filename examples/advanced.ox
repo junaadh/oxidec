@@ -1,42 +1,42 @@
 // Advanced - Demonstrates advanced features combined
 
 protocol Comparable {
-    fn cmp(&self, other: Self) -> Int
+    fn cmp(other: Self) -> Int
 }
 
 enum BinaryTree<T> {
-    Leaf,
-    Node { value: T, left: Box<BinaryTree<T>>, right: Box<BinaryTree<T>> },
+    case leaf,
+    case node(value: T, left: Box<BinaryTree<T>>, right: Box<BinaryTree<T>>),
 }
 
 impl<T: Comparable> BinaryTree<T> {
     fn new() -> Self {
-        BinaryTree::Leaf
+        .leaf
     }
 
-    fn insert(&self, value: T) -> Self {
+    fn insert(value: T) -> Self {
         match self {
-            BinaryTree::Leaf => {
-                BinaryTree::Node {
-                    value,
-                    left: Box::new(BinaryTree::Leaf),
-                    right: Box::new(BinaryTree::Leaf),
-                }
+            .leaf => {
+                .node(
+                    value: value,
+                    left: Box::new(.leaf),
+                    right: Box::new(.leaf),
+                )
             },
-            BinaryTree::Node { value: v, left, right } => {
-                let cmp = value.cmp(*v)
+            .node(value: v, left, right) => {
+                let cmp = value.cmp(v)
                 if cmp < 0 {
-                    BinaryTree::Node {
-                        value: *v,
+                    .node(
+                        value: v,
                         left: Box::new(left.insert(value)),
                         right: right,
-                    }
+                    )
                 } else {
-                    BinaryTree::Node {
-                        value: *v,
+                    .node(
+                        value: v,
                         left: left,
                         right: Box::new(right.insert(value)),
-                    }
+                    )
                 }
             },
         }
@@ -48,10 +48,10 @@ struct IntWrapper {
 }
 
 impl Comparable for IntWrapper {
-    fn cmp(&self, other: Self) -> Int {
-        if self.value < other.value {
+    fn cmp(other: Self) -> Int {
+        if value < other.value {
             -1
-        } else if self.value > other.value {
+        } else if value > other.value {
             1
         } else {
             0

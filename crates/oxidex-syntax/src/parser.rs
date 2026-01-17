@@ -1130,15 +1130,10 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             }
         };
 
-        // Check for reference types: &T or &mut T
-        if self.check(TokenKind::Amp) {
-            return self.parse_reference_type();
-        }
-
-        // Check for inferred type: _
-        if self.check(TokenKind::Underscore) {
+        // Check for Self type
+        if self.check(TokenKind::SelfType) {
             self.bump();
-            return Ok(Type::Inferred { span: start_span });
+            return Ok(Type::SelfType { span: start_span });
         }
 
         // Check for tuple or function types: (...)
@@ -1153,25 +1148,6 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
         // Simple or generic type: T or T<Args>
         self.parse_simple_or_generic_type()
-    }
-
-    /// Parses a reference type: &T or &mut T
-    fn parse_reference_type(&mut self) -> ParserResult<Type> {
-        let start_span = self.bump().unwrap().span; // consume &
-
-        let mutable = self.check(TokenKind::Mut);
-        if mutable {
-            self.bump(); // consume mut
-        }
-
-        let inner = Box::new(self.parse_type()?);
-        let end_span = inner.span();
-
-        Ok(Type::Reference {
-            inner,
-            mutable,
-            span: Span::merge(start_span, end_span),
-        })
     }
 
     /// Parses a tuple or function type: (T1, T2) or (T1, T2) -> T3
@@ -1831,8 +1807,44 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         };
 
         match token_kind {
+            // Check for `mut fn` or `static fn` or `init`
+            TokenKind::Mut => {
+                self.bump(); // consume 'mut'
+                if self.check(TokenKind::Fn) {
+                    self.parse_fn_decl(
+                        visibility, start_span, true, false, false,
+                    )
+                } else {
+                    Err(ParserError::UnexpectedToken {
+                        expected: vec!["fn".to_string()],
+                        found: format!("{token_kind:?}"),
+                        span: start_span,
+                    })
+                }
+            }
+
+            TokenKind::Static => {
+                // Check if this is `static fn` or `static let`/`static let mut`
+                if self.peek_next().map(|t| &t.kind) == Some(&TokenKind::Fn) {
+                    self.bump(); // consume 'static'
+                    // Don't consume 'fn', parse_fn_decl will do that
+                    self.parse_fn_decl(
+                        visibility, start_span, false, false, true,
+                    )
+                } else {
+                    self.parse_static_decl(visibility, start_span)
+                }
+            }
+
+            // Initializer
+            TokenKind::Init => {
+                self.parse_fn_decl(visibility, start_span, false, true, false)
+            }
+
             // Function declaration
-            TokenKind::Fn => self.parse_fn_decl(visibility, start_span),
+            TokenKind::Fn => {
+                self.parse_fn_decl(visibility, start_span, false, false, false)
+            }
 
             // Struct declaration
             TokenKind::Struct => self.parse_struct_decl(visibility, start_span),
@@ -1853,9 +1865,6 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
             // Constant declaration
             TokenKind::Const => self.parse_const_decl(visibility, start_span),
-
-            // Static declaration
-            TokenKind::Static => self.parse_static_decl(visibility, start_span),
 
             // Type alias
             TokenKind::Type => {
@@ -1903,10 +1912,23 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         &mut self,
         visibility: Visibility,
         start_span: Span,
+        is_mut: bool,
+        is_init: bool,
+        is_static: bool,
     ) -> ParserResult<Decl<'arena>> {
-        self.bump(); // consume 'fn'
+        // Consume 'fn' or 'init' token
+        if is_init {
+            self.bump(); // consume 'init'
+        } else {
+            self.bump(); // consume 'fn'
+        }
 
-        let name = self.expect_identifier()?;
+        let name = if !is_init {
+            self.expect_identifier()?
+        } else {
+            // For init functions, use "init" as the name internally
+            self.interner.intern("init")
+        };
 
         // Parse generics: <T, U>
         let generics = self.parse_generics()?;
@@ -1940,6 +1962,9 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         let end_span = body.span();
 
         Ok(Decl::Fn {
+            is_mut,
+            is_init,
+            is_static,
             name,
             generics,
             params,
@@ -1950,7 +1975,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         })
     }
 
-    /// Parses a function parameter: `name: Type`
+    /// Parses a function parameter: `name: Type` or `_ name: Type` or `label name: Type`
     fn parse_fn_param(&mut self) -> ParserResult<FnParam> {
         let start_span = match self.peek() {
             Some(t) => t.span,
@@ -1961,12 +1986,33 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             }
         };
 
+        // Check for underscore (omitted label): `_ name: Type`
+        let label = if self.check(TokenKind::Underscore) {
+            self.bump(); // consume _
+            None
+        } else {
+            // Peek ahead to see if this is `label name: Type` or just `name: Type`
+            match self.peek_next().map(|t| &t.kind) {
+                Some(TokenKind::Colon) => {
+                    // Just `name: Type` - label is None (will use name as label)
+                    None
+                }
+                Some(TokenKind::Ident(_)) => {
+                    // `label name: Type` - consume label and use it
+                    let label = self.expect_identifier()?;
+                    Some(label)
+                }
+                _ => None,
+            }
+        };
+
         let name = self.expect_identifier()?;
         self.expect(TokenKind::Colon)?;
         let type_annotation = self.parse_type()?;
         let span = Span::merge(start_span, type_annotation.span());
 
         Ok(FnParam {
+            label,
             name,
             type_annotation,
             span,
@@ -2136,11 +2182,37 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
         self.expect(TokenKind::LBrace)?;
 
-        // Parse variants
+        // Parse variants and methods (can be mixed like Swift)
         let mut variants = Vec::new();
+        let mut methods = Vec::new();
+
         while !self.check(TokenKind::RBrace) && !self.is_at_eof() {
-            let variant = self.parse_enum_variant()?;
-            variants.push(variant);
+            // Check if this is a `case` variant or a method
+            if self.check(TokenKind::Case) {
+                // Parse enum variant
+                let variant = self.parse_enum_variant()?;
+                variants.push(variant);
+            } else if self.check(TokenKind::Mut) || self.check(TokenKind::Static) || self.check(TokenKind::Init) || self.check(TokenKind::Fn) || self.check(TokenKind::Pub) || self.check(TokenKind::Prv) {
+                // Parse method (pub/prv mut fn, pub/prv static fn, pub/prv init, pub/prv fn)
+                let method = self.parse_impl_method()?;
+                methods.push(FnDecl {
+                    is_mut: method.is_mut,
+                    is_init: method.is_init,
+                    is_static: method.is_static,
+                    name: method.name,
+                    generics: method.generics,
+                    params: method.params,
+                    return_type: method.return_type,
+                    visibility: method.visibility,
+                    span: method.span,
+                });
+            } else {
+                return Err(ParserError::UnexpectedToken {
+                    expected: vec!["case".to_string(), "pub".to_string(), "prv".to_string(), "fn".to_string(), "mut".to_string(), "static".to_string(), "init".to_string()],
+                    found: format!("{:?}", self.peek().map(|t| &t.kind)),
+                    span: self.peek().map(|t| t.span).unwrap_or_else(|| Span::point(self.source.len(), 1, 1)),
+                });
+            }
 
             if !self.check(TokenKind::RBrace) {
                 self.expect(TokenKind::Comma)?;
@@ -2157,28 +2229,22 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             name,
             generics,
             variants,
+            methods,
             protocols,
             visibility,
             span: Span::merge(start_span, end_span),
         })
     }
 
-    /// Parses an enum variant.
+    /// Parses an enum variant (with `case` keyword).
     fn parse_enum_variant(&mut self) -> ParserResult<EnumVariant> {
-        let start_span = match self.peek() {
-            Some(t) => t.span,
-            None => {
-                return Err(ParserError::ExpectedExpression {
-                    span: Span::point(self.source.len(), 1, 1),
-                });
-            }
-        };
+        let start_span = self.bump().unwrap().span; // consume 'case'
 
         let name = self.expect_identifier()?;
 
         // Check what kind of variant this is
         if self.check(TokenKind::LParen) {
-            // Tuple variant: Some(T)
+            // Tuple variant: case some(T)
             self.bump(); // consume (
 
             let mut fields = Vec::new();
@@ -2203,7 +2269,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 span: Span::merge(start_span, end_span),
             })
         } else if self.check(TokenKind::LBrace) {
-            // Struct variant: Point { x: T, y: T }
+            // Struct variant: case point { x: T, y: T }
             self.bump(); // consume {
 
             let mut fields = Vec::new();
@@ -2228,7 +2294,7 @@ impl<'input, 'arena> Parser<'input, 'arena> {
                 span: Span::merge(start_span, end_span),
             })
         } else {
-            // Unit variant: None
+            // Unit variant: case none
             let end_span = self
                 .tokens
                 .get(self.pos.saturating_sub(1))
@@ -2375,8 +2441,8 @@ impl<'input, 'arena> Parser<'input, 'arena> {
 
     /// Parses a method inside an impl block.
     fn parse_impl_method(&mut self) -> ParserResult<FnDecl> {
-        // Note: Visibility parsed but not used - impl methods inherit parent's visibility
-        let _visibility = self.parse_visibility();
+        // Parse visibility (will be resolved to most restrictive of parent and method later)
+        let visibility = self.parse_visibility();
         let start_span = match self.peek() {
             Some(t) => t.span,
             None => {
@@ -2386,8 +2452,31 @@ impl<'input, 'arena> Parser<'input, 'arena> {
             }
         };
 
-        self.expect(TokenKind::Fn)?;
-        let name = self.expect_identifier()?;
+        // Check for mut fn, static fn, or init
+        let is_mut = self.check(TokenKind::Mut);
+        if is_mut {
+            self.bump(); // consume 'mut'
+        }
+
+        let is_static = self.check(TokenKind::Static);
+        if is_static {
+            self.bump(); // consume 'static'
+        }
+
+        let is_init = self.check(TokenKind::Init);
+
+        // Consume 'fn' or 'init'
+        if is_init {
+            self.bump(); // consume 'init'
+        } else {
+            self.expect(TokenKind::Fn)?; // consumes 'fn'
+        }
+
+        let name = if !is_init {
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
 
         let generics = self.parse_generics()?;
 
@@ -2417,10 +2506,14 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         let end_span = body_expr.span();
 
         Ok(FnDecl {
+            is_mut,
+            is_init,
+            is_static,
             name,
             generics,
             params,
             return_type,
+            visibility,
             span: Span::merge(start_span, end_span),
         })
     }
@@ -2458,6 +2551,9 @@ impl<'input, 'arena> Parser<'input, 'arena> {
         start_span: Span,
     ) -> ParserResult<Decl<'arena>> {
         self.bump(); // consume 'static'
+
+        // Expect 'let' or 'let mut'
+        self.expect(TokenKind::Let)?;
 
         let mutable = if self.check(TokenKind::Mut) {
             self.bump(); // consume 'mut'
@@ -2730,7 +2826,8 @@ mod tests {
 
         let decl = parser.parse_decl().unwrap();
         match decl {
-            Decl::Fn { name, .. } => {
+            Decl::Fn { is_init, name, .. } => {
+                assert!(!is_init);
                 let name_str = parser.resolve_symbol(name);
                 assert_eq!(name_str, "foo");
             }
@@ -2758,7 +2855,7 @@ mod tests {
     // NOTE: Tests for complex generics and reference types are temporarily disabled
     // as they require additional parser integration work. The core parsing
     // functionality is implemented and can be tested incrementally.
-    /*
+    // /*
     #[test]
     fn test_parse_fn_decl_with_generics() {
         let source = "fn identity<T>(x: T) -> T { x }";
@@ -2771,8 +2868,7 @@ mod tests {
         let decl = parser.parse_decl();
         assert!(decl.is_ok());
     }
-    */
-
+    // */
     #[test]
     fn test_parse_struct_decl() {
         let source = "struct Point { x: Int, y: Int }";
@@ -2842,7 +2938,7 @@ mod tests {
 
     #[test]
     fn test_parse_enum_decl() {
-        let source = "enum Option { None, Some(T) }";
+        let source = "enum Option { case none, case some(T) }";
         let arena = LocalArena::new(8192);
         let lexer = Lexer::new(source);
         let (tokens, interner) = lexer.lex_with_interner().unwrap();
@@ -2852,6 +2948,153 @@ mod tests {
         match decl {
             Decl::Enum { variants, .. } => {
                 assert_eq!(variants.len(), 2);
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_method() {
+        let source = "enum Option { case none, case some(T), fn isSome() -> Bool { false } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { variants, methods, .. } => {
+                assert_eq!(variants.len(), 2);
+                assert_eq!(methods.len(), 1);
+                assert!(!methods[0].is_static);
+                assert!(!methods[0].is_mut);
+                assert!(!methods[0].is_init);
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_mut_method() {
+        let source = "enum Counter { case zero, mut fn increment() { } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { methods, .. } => {
+                assert_eq!(methods.len(), 1);
+                assert!(methods[0].is_mut);
+                assert!(!methods[0].is_static);
+                assert!(!methods[0].is_init);
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_static_method() {
+        let source = "enum Option { case none, static fn default() -> Self { .none } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { methods, .. } => {
+                assert_eq!(methods.len(), 1);
+                assert!(!methods[0].is_mut);
+                assert!(methods[0].is_static);
+                assert!(!methods[0].is_init);
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_mixed_variants_and_methods() {
+        let source = "enum Option { case none, fn isNone() -> Bool { true }, case some(T), fn unwrap() -> T { } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { variants, methods, .. } => {
+                assert_eq!(variants.len(), 2);
+                assert_eq!(methods.len(), 2);
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_struct_variant() {
+        let source = "enum Shape { case point { x: Float, y: Float } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { variants, .. } => {
+                assert_eq!(variants.len(), 1);
+                match &variants[0] {
+                    EnumVariant::Struct { fields, .. } => {
+                        assert_eq!(fields.len(), 2);
+                    }
+                    _ => panic!("Expected struct variant, got {:?}", variants[0]),
+                }
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_tuple_variant() {
+        let source = "enum Option { case some(Int, String) }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { variants, .. } => {
+                assert_eq!(variants.len(), 1);
+                match &variants[0] {
+                    EnumVariant::Tuple { fields, .. } => {
+                        assert_eq!(fields.len(), 2);
+                    }
+                    _ => panic!("Expected tuple variant, got {:?}", variants[0]),
+                }
+            }
+            _ => panic!("Expected Enum decl, got {:?}", decl),
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_method_visibility() {
+        // Test that enum methods can have their own visibility
+        // During semantic analysis, this will be resolved to most restrictive of parent and method
+        let source = "enum Option { case none, pub fn publicMethod() -> Bool { true }, prv fn privateMethod() -> Bool { false } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl().unwrap();
+        match decl {
+            Decl::Enum { methods, .. } => {
+                assert_eq!(methods.len(), 2);
+                // Methods have their own visibility stored
+                assert_eq!(methods[0].visibility, Visibility::Public);
+                assert_eq!(methods[1].visibility, Visibility::Private);
             }
             _ => panic!("Expected Enum decl, got {:?}", decl),
         }
@@ -2915,7 +3158,7 @@ mod tests {
 
     #[test]
     fn test_parse_static_decl() {
-        let source = "static counter: Int = 0;";
+        let source = "static let counter: Int = 0;";
         let arena = LocalArena::new(8192);
         let lexer = Lexer::new(source);
         let (tokens, interner) = lexer.lex_with_interner().unwrap();
@@ -2934,7 +3177,7 @@ mod tests {
 
     #[test]
     fn test_parse_static_mutable_decl() {
-        let source = "static mut counter: Int = 0;";
+        let source = "static let mut counter: Int = 0;";
         let arena = LocalArena::new(8192);
         let lexer = Lexer::new(source);
         let (tokens, interner) = lexer.lex_with_interner().unwrap();
@@ -3099,55 +3342,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_reference_type() {
-        // NOTE: Test just the type annotation part
-        // Reference expressions (&value) require unary & operator which isn't implemented yet
-        let source = "let x: &Int = 42;";
-        let arena = LocalArena::new(8192);
-        let lexer = Lexer::new(source);
-        let (tokens, interner) = lexer.lex_with_interner().unwrap();
-        let mut parser = Parser::new(tokens, source, interner, arena);
-
-        // Just verify it parses without error
-        let stmt = parser.parse_stmt();
-        if let Err(e) = &stmt {
-            eprintln!("Error parsing reference type: {:?}", e);
-        }
-        assert!(stmt.is_ok());
-    }
-
-    #[test]
-    fn test_parse_mutable_reference_type() {
-        // NOTE: Test just the type annotation part
-        // Reference expressions (&mut value) require unary & operator which isn't implemented yet
-        let source = "let x: &mut Int = 42;";
-        let arena = LocalArena::new(8192);
-        let lexer = Lexer::new(source);
-        let (tokens, interner) = lexer.lex_with_interner().unwrap();
-        let mut parser = Parser::new(tokens, source, interner, arena);
-
-        // Just verify it parses without error
-        let stmt = parser.parse_stmt();
-        if let Err(e) = &stmt {
-            eprintln!("Error parsing mutable reference type: {:?}", e);
-        }
-        assert!(stmt.is_ok());
-    }
-
-    #[test]
-    fn test_parse_inferred_type() {
-        let source = "let x: _ = 42;";
-        let arena = LocalArena::new(8192);
-        let lexer = Lexer::new(source);
-        let (tokens, interner) = lexer.lex_with_interner().unwrap();
-        let mut parser = Parser::new(tokens, source, interner, arena);
-
-        // Just verify it parses without error
-        let stmt = parser.parse_stmt();
-        assert!(stmt.is_ok());
-    }
-
-    #[test]
     fn test_parse_type_alias_decl() {
         let source = "type Result<T> = Option<T>;";
         let arena = LocalArena::new(8192);
@@ -3158,6 +3352,264 @@ mod tests {
         // Just verify it parses without error
         let decl = parser.parse_decl();
         assert!(decl.is_ok());
+    }
+
+    #[test]
+    fn test_parse_mut_fn() {
+        let source = "mut fn increment(x: Int) -> Int { x + 1 }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn {
+                is_mut,
+                is_init,
+                is_static,
+                ..
+            } => {
+                assert!(is_mut);
+                assert!(!is_init);
+                assert!(!is_static);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_init() {
+        let source = "init(x: Int) { }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn {
+                is_mut,
+                is_init,
+                is_static,
+                ..
+            } => {
+                assert!(!is_mut);
+                assert!(is_init);
+                assert!(!is_static);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_static_fn() {
+        let source = "static fn create() -> Self { Self { } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn {
+                is_mut,
+                is_init,
+                is_static,
+                return_type,
+                ..
+            } => {
+                assert!(!is_mut);
+                assert!(!is_init);
+                assert!(is_static);
+                assert!(return_type.is_some());
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_self_type() {
+        let source = "fn new() -> Self { Self { } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn { return_type, .. } => {
+                assert!(return_type.is_some());
+                match return_type.unwrap() {
+                    Type::SelfType { .. } => {}
+                    _ => panic!("Expected SelfType"),
+                }
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_pub_mut_fn() {
+        let source = "pub mut fn modify() { }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn {
+                is_mut, visibility, ..
+            } => {
+                assert!(is_mut);
+                assert!(matches!(visibility, Visibility::Public));
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_block_with_mut_init() {
+        let source = "impl Point { mut fn scale(by: Float) { } init(x: Float, y: Float) { } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Impl { methods, .. } => {
+                assert_eq!(methods.len(), 2);
+                assert!(methods[0].is_mut);
+                assert!(methods[1].is_init);
+            }
+            _ => panic!("Expected Impl declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_impl_method_visibility() {
+        // Test that impl methods can have their own visibility
+        // During semantic analysis, this will be resolved to most restrictive of parent and method
+        let source = "impl Point { pub fn publicMethod() -> Bool { true } prv fn privateMethod() -> Bool { false } }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Impl { methods, .. } => {
+                assert_eq!(methods.len(), 2);
+                // Methods have their own visibility stored
+                assert_eq!(methods[0].visibility, Visibility::Public);
+                assert_eq!(methods[1].visibility, Visibility::Private);
+            }
+            _ => panic!("Expected Impl declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fn_with_default_labels() {
+        // Swift-style: parameters are labeled by default
+        let source = "fn add(x: Int, y: Int) -> Int { x + y }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn { name, params, .. } => {
+                let name_str = parser.resolve_symbol(name);
+                assert_eq!(name_str, "add");
+                assert_eq!(params.len(), 2);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fn_with_omitted_labels() {
+        // Swift-style: omit labels with underscore
+        let source = "fn add(_ x: Int, _ y: Int) -> Int { x + y }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn { name, params, .. } => {
+                let name_str = parser.resolve_symbol(name);
+                assert_eq!(name_str, "add");
+                assert_eq!(params.len(), 2);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fn_with_external_labels() {
+        // Swift-style: external and internal parameter names
+        let source = "fn add(from x: Int, to y: Int) -> Int { x + y }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn { name, params, .. } => {
+                let name_str = parser.resolve_symbol(name);
+                assert_eq!(name_str, "add");
+                assert_eq!(params.len(), 2);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mixed_labels() {
+        // Mix of default, omitted, and external labels
+        let source = "fn process(x: Int, _ y: Int, with z: Int) -> Int { x }";
+        let arena = LocalArena::new(8192);
+        let lexer = Lexer::new(source);
+        let (tokens, interner) = lexer.lex_with_interner().unwrap();
+        let mut parser = Parser::new(tokens, source, interner, arena);
+
+        let decl = parser.parse_decl();
+        assert!(decl.is_ok());
+
+        match decl.unwrap() {
+            Decl::Fn { name, params, .. } => {
+                let name_str = parser.resolve_symbol(name);
+                assert_eq!(name_str, "process");
+                assert_eq!(params.len(), 3);
+            }
+            _ => panic!("Expected Fn declaration"),
+        }
     }
 
     #[test]
@@ -3177,7 +3629,8 @@ mod tests {
         assert_eq!(parser.errors().len(), 0);
 
         // Create emitter and emit errors (should not panic even with no errors)
-        let diagnostic_interner = oxidex_mem::StringInterner::with_pre_interned(keywords::KEYWORDS);
+        let diagnostic_interner =
+            oxidex_mem::StringInterner::with_pre_interned(keywords::KEYWORDS);
         let emitter = Emitter::new(diagnostic_interner, false);
         parser.emit_errors(&emitter); // Should handle empty error list gracefully
     }

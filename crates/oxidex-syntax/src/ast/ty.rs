@@ -75,18 +75,8 @@ pub enum Type {
         span: Span,
     },
 
-    /// Reference type: `&T` or `&mut T`
-    Reference {
-        /// Inner type
-        inner: Box<Type>,
-        /// Is mutable
-        mutable: bool,
-        /// Source location
-        span: Span,
-    },
-
-    /// Inferred type: `_`
-    Inferred {
+    /// Self type: `Self` - type alias for the current type
+    SelfType {
         /// Source location
         span: Span,
     },
@@ -102,8 +92,7 @@ impl Spanned for Type {
             | Self::Array { span, .. }
             | Self::Dict { span, .. }
             | Self::Optional { span, .. }
-            | Self::Reference { span, .. }
-            | Self::Inferred { span, .. } => *span,
+            | Self::SelfType { span, .. } => *span,
         }
     }
 }

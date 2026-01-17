@@ -8,9 +8,9 @@ enum Shape {
 
 fn area(shape: Shape) -> Float {
     match shape {
-        Shape::Circle { radius } => 3.14159 * radius * radius,
-        Shape::Rectangle { width, height } => width * height,
-        Shape::Point { .. } => 0.0,
+        .circle { radius } => 3.14159 * radius * radius,
+        .rectangle { width, height } => width * height,
+        .point { .. } => 0.0,
     }
 }
 
@@ -23,15 +23,33 @@ fn describe_point(point: [Float]) {
     }
 }
 
+fn get_radius(shape: Shape) -> Option<Float> {
+    match shape {
+        .circle { radius } => .some(radius),
+        _ => .none,
+    }
+}
+
 fn main() {
-    let circle = Shape::Circle { radius: 5.0 }
+    let circle = .circle { radius: 5.0 }
     print(area(circle))
 
-    let rect = Shape::Rectangle { width: 10.0, height: 20.0 }
+    let rect = .rectangle { width: 10.0, height: 20.0 }
     print(area(rect))
 
-    let point = Shape::Point { x: 3.0, y: 4.0 }
+    let point = .point { x: 3.0, y: 4.0 }
     print(area(point))
+
+    // if let pattern matching
+    if let .some(r) = get_radius(circle) {
+        print("Circle radius: " + r)
+    }
+
+    if let .some(r) = get_radius(rect) {
+        print("Rectangle radius?: " + r)
+    } else {
+        print("Not a circle")
+    }
 
     describe_point([0.0, 0.0])
     describe_point([5.0, 0.0])

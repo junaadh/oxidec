@@ -3,7 +3,7 @@
 A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
-**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 6 Planned
+**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b In Progress | Language Phase 6 Planned
 
 **Runtime Achievements:**
 - 639 tests passing (639/639 with 6 ignored)
@@ -14,8 +14,17 @@ A modern message-based dynamic language combining Swift's ergonomic syntax with 
 - Full Stacked Borrows compliance
 
 **Language Frontend Achievements (Phase 5b):**
-- Complete lexer with 29 token types
-- Full parser with 189 tests passing (170 unit + 19 doctest)
+- Complete lexer with 24 keywords and all token types
+- Full parser with 231 tests passing (208 unit + 23 integration)
+- AST for all declaration types
+- Enum support with `case` keyword
+- Enum methods (directly in body and impl blocks)
+- Method visibility resolution (most restrictive of parent and method)
+- Labeled parameters (Swift-style)
+- `self` and `Self` keywords
+- `init` keyword for initializers
+- `mut fn` for mutable methods
+- `static fn` for static methods
 - Pretty-printer for all AST nodes
 - 15 example programs demonstrating language features
 - Parser performance benchmarks
@@ -43,16 +52,16 @@ A high-performance dynamic object runtime in Rust providing:
   - MIRI validated with strict provenance (280 tests)
   - Global arena: 3.98ns (47.6% improvement over baseline)
 
-### OxideX Language (Phase 5b Complete ✓)
+### OxideX Language (Phase 5b In Progress)
 A modern programming language featuring:
 - Swift-inspired syntax with clean ergonomics
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 5a complete, Phase 5b complete, Phase 6 planned
+- **Status**: Phase 5a complete, Phase 5b in progress, Phase 6 planned
   - Phase 5a: Memory infrastructure (oxidex-mem crate, string interning)
   - Phase 5b: Language frontend (lexer, parser, AST, diagnostics, pretty-printer)
-  - 189 tests passing (170 unit + 19 doctest)
+  - 231 tests passing (208 unit + 23 integration)
   - 15 example programs covering all language features
   - Parser performance benchmarks
   - Integration tests for parsing, roundtrip, diagnostics
@@ -62,6 +71,8 @@ A modern programming language featuring:
   - Keywords properly separated into syntax layer
   - Generic type parsing with angle bracket support
   - Rich error reporting with Rust-style diagnostics
+  - Enum support with `case` keyword and enum methods
+  - Method visibility resolution (Rust-style, most restrictive wins)
 
 ## Architecture
 
@@ -72,7 +83,7 @@ oxidex/
 ├── crates/
 │   ├── oxidec/                   # Runtime (Phase 1-4c: COMPLETE)
 │   ├── oxidex-mem/               # Memory infrastructure (Phase 5a: COMPLETE)
-│   ├── oxidex-syntax/            # Language syntax (Phase 5b: COMPLETE)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: IN PROGRESS)
 │   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
 │   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
 │   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)

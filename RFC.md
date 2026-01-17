@@ -360,19 +360,20 @@ Config::register()
 
 ```oxidex
 struct Point {
-    let x: Int
-    let y: Int
+    x: Int
+    y: Int
 
+    // Method defined directly in struct
     fn moveBy(dx: Int, dy: Int) -> Point {
         return Point(x: x + dx, y: y + dy)
     }
 
-    fn mutate(&mut self, dx: Int, dy: Int) {
+    mut fn mutate(dx: Int, dy: Int) {
         x += dx
         y += dy
     }
-    
-    fn distanceFromOrigin(self) -> Float {
+
+    fn distanceFromOrigin() -> Float {
         sqrt(Float(x*x + y*y))
     }
 
@@ -381,15 +382,30 @@ struct Point {
     }
 }
 
+// Separate impl block for additional methods
+impl Point {
+    fn distance(to other: Point) -> Float {
+        let dx = other.x - x
+        let dy = other.y - y
+        sqrt(Float(dx*dx + dy*dy))
+    }
+
+    mut fn scale(by factor: Float) {
+        x = Int(Float(x) * factor)
+        y = Int(Float(y) * factor)
+    }
+}
+
 // Usage
 let mut p = Point(x: 0, y: 0)
-p.mutate(1, 2)  // OK
+p.mutate(dx: 1, dy: 2)  // OK - labeled parameters
 
 let q = Point(x: 1, y: 1)
-// q.mutate(1, 2)  // Compile-time error
+// q.mutate(dx: 1, dy: 2)  // Compile-time error: q is immutable
 
-let o = Point::origin()      // static method
-p.distanceFromOrigin()       // instance method
+let o = Point::origin()  // static method
+p.distanceFromOrigin()   // instance method
+p.distance(to: q)        // method from impl block
 ```
 
 ### 3.5.2 Classes
@@ -398,22 +414,24 @@ p.distanceFromOrigin()       // instance method
 - Reference types, dynamic dispatch by default
 - Can be overridden in subclasses
 - `final class` → devirtualized where possible
+- `self` is implicit in methods (can omit `self.` prefix when unambiguous)
 
 ```oxidex
 class Animal {
-    let name: String
-    let mut age: Int
+    name: String
+    mut age: Int
 
-    init(name: String, age: Int) { 
+    // Swift-style initializer - allows Animal() construction
+    init(name: String, age: Int) {
         self.name = name
-        self.age = age 
+        age = age  // can omit self. when unambiguous
     }
 
     fn makeSound() -> String { "Some sound" }
 }
 
 class Dog: Animal {
-    let breed: String
+    breed: String
 
     init(name: String, age: Int, breed: String) {
         self.breed = breed
@@ -421,34 +439,236 @@ class Dog: Animal {
     }
 
     override fn makeSound() -> String { "Woof!" }
+
+    mut fn haveBirthday() {
+        age = age + 1
+    }
 }
 
+// Using init() - Swift-style construction
 let dog = Dog(name: "Rex", age: 3, breed: "Labrador")
 dog.makeSound()
+
+// Factory method pattern using static fn
+impl Animal {
+    static fn create(name: String) -> Self {
+        Self { name, age: 0 }
+    }
+}
+
+let cat = Animal::create(name: "Whiskers")
 ```
 
 ### 3.5.3 Static Methods with Classes
+
+**Important**: Static methods must use `static fn` keyword explicitly.
 
 ```oxidex
 class Logger {
     static fn globalPrefix() -> String { "[LOG]" }
 
-    fn log(self, message: String) {
-        print("\(Logger::globalPrefix()) \(message)")
+    // Instance method - self is implicit
+    fn log(message: String) {
+        let prefix = Logger::globalPrefix()  // calling static method
+        print("\(prefix) \(message)")
     }
 }
 
 let log = Logger()
-log.log("Hello")       // instance method calling static method
-Logger::globalPrefix() // call static method without instance
+log.log(message: "Hello")      // instance method with labeled parameter
+Logger::globalPrefix()          // call static method without instance
 ```
 
 **Rules**:
-- Instance methods → `instance.method()`
-- Static methods → `Type::Method()`
-- Static methods cannot call instance methods directly
+- Instance methods → `instance.method(label: value)`
+- Static methods → `Type::method(label: value)` or `Type::staticMethod()`
+- `static fn` is required for static methods (not implicit)
+- Static methods cannot access `self` or call instance methods directly
 - Instance methods can call static methods
 - Protocols can be implemented on both structs and classes
+
+### 3.5.4 Method Definition Options
+
+OxideX supports three ways to define methods, providing flexibility in code organization:
+
+**1. Methods directly in struct/class body**
+```oxidex
+struct Point {
+    x: Float
+    y: Float
+
+    fn distance(to other: Point) -> Float {
+        let dx = other.x - x
+        let dy = other.y - y
+        ((dx * dx) + (dy * dy)).sqrt()
+    }
+}
+```
+
+**2. Methods in separate `impl` blocks**
+```oxidex
+impl Point {
+    mut fn scale(by factor: Float) {
+        x = x * factor
+        y = y * factor
+    }
+
+    fn translated(by offset: Float) -> Point {
+        Point(x: x + offset, y: y + offset)
+    }
+}
+```
+
+**3. Protocol conformance using `impl`**
+```oxidex
+protocol Drawable {
+    fn draw()
+}
+
+impl Drawable for Point {
+    fn draw() {
+        print("Point at (\(x), \(y))")
+    }
+}
+```
+
+**When to use each approach**:
+- Direct definition: Core methods that are essential to the type
+- impl blocks: Extension methods, organizing related functionality
+- impl Protocol: Protocol conformance, keeping implementations separate
+
+### 3.5.5 Method Modifiers
+
+OxideX uses the `mut` keyword to mark methods that modify the instance:
+
+```oxidex
+struct Counter {
+    count: Int
+}
+
+// Immutable method - default
+fn get() -> Int {
+    count  // cannot modify fields
+}
+
+// Mutable method - requires mut fn
+mut fn increment(by amount: Int) {
+    count = count + amount  // can modify fields
+}
+
+// Visibility + mutability
+pub mut fn publicMutate() { ... }
+prv mut fn privateMutate() { ... }
+```
+
+**Rules**:
+- Immutable methods (just `fn`) cannot modify instance fields
+- Mutable methods (`mut fn`) can modify instance fields
+- Mutable methods can only be called on `let mut` instances
+- Immutable methods can be called on both `let` and `let mut` instances
+- Visibility modifiers (`pub`, `prv`) can combine with `mut`
+
+### 3.5.6 Initializers
+
+OxideX supports two initializer patterns:
+
+**1. Swift-style `init()` - Direct construction**
+```oxidex
+class Counter {
+    count: Int
+
+    init() {
+        count = 0
+    }
+
+    init(startingAt count: Int) {
+        self.count = count
+    }
+}
+
+// Allows: Counter() and Counter(startingAt: 5)
+let c1 = Counter()
+let c2 = Counter(startingAt: 10)
+```
+
+**2. Factory method `static fn new()` - Named construction**
+```oxidex
+impl Counter {
+    static fn new() -> Self {
+        Self { count: 0 }
+    }
+
+    static fn withCount(count: Int) -> Self {
+        Self { count }
+    }
+}
+
+// Requires: Counter::new() and Counter::withCount(count: 5)
+let c3 = Counter::new()
+let c4 = Counter::withCount(count: 15)
+```
+
+**Comparison**:
+
+| Feature | `init()` | `static fn new()` |
+|---------|----------|-------------------|
+| Call syntax | `Type()` | `Type::new()` |
+| Return type | Implicit Self | Explicit `-> Self` |
+| Self keyword | Optional | Required |
+| Parameter labels | Yes | Yes |
+| Multiple overloads | Yes | Yes (different names) |
+
+**When to use each**:
+- `init()`: Primary constructors, common initialization patterns
+- `static fn new()`: Factory methods, named constructors, complex logic
+
+### 3.5.7 Labeled Parameters
+
+OxideX uses Swift-style labeled parameters for clear, self-documenting code:
+
+**1. Default - All parameters labeled**
+```oxidex
+fn add(x: Int, y: Int) -> Int {
+    x + y
+}
+
+// Called with labels
+let sum = add(x: 1, y: 2)
+```
+
+**2. Omit label with underscore**
+```oxidex
+fn add(_ x: Int, _ y: Int) -> Int {
+    x + y
+}
+
+// Called without labels
+let sum = add(1, 2)
+```
+
+**3. External/internal names**
+```oxidex
+fn add(from x: Int, to y: Int) -> Int {
+    x + y
+}
+
+// Called with external labels
+let sum = add(from: 1, to: 2)
+```
+
+**In methods**:
+```oxidex
+struct Point {
+    fn move(by offset: Float) { ... }         // labeled: move(by: 5.0)
+    fn translate(_ dx: Float, _ dy: Float)   // unlabeled: translate(3, 4)
+    fn scale(from x: Float, to y: Float)     // external: scale(from: 1, to: 2)
+}
+```
+
+**Guidelines**:
+- Use labels for all parameters by default (clearer call sites)
+- Use `_` for obvious parameters (like `x`, `y` in coordinates)
+- Use external names when internal name is technical (e.g., `from x`, `to y`)
 
 ---
 
@@ -498,54 +718,151 @@ let f: fn(Int) -> Int = Point::distanceFromOrigin
 - Static dispatch
 - Can carry payloads per variant
 - Optional error propagation with `try` and `try?`
+- Can have methods (both in enum body and in impl blocks)
+- Can conform to protocols
 
 ```oxidex
-enum Result<T, E> { 
+enum Result<T, E> {
     case ok(T)
-    case err(E) 
+    case err(E)
 }
 
-enum Shape {
-    case Circle(radius: Double)
-    case Rectangle(width: Double, height: Double)
-    case Point
-}
+enum Option<T> {
+    case some(T),
+    case none,
 
-// Using match
-fn area(shape: Shape) -> Double {
-    match shape {
-        .Circle(r) => 3.14159 * r * r
-        .Rectangle(w, h) => w * h
-        .Point => 0
+    // Method directly in enum body
+    fn isSome() -> Bool {
+        match self {
+            .some(_) => true,
+            .none => false,
+        }
     }
 }
 
-// Dot notation for construction
-let c: Shape = .Circle(radius: 5.0)
-let p: Shape = .Point
+// impl block for additional methods
+impl Option<T> {
+    fn unwrap() -> T {
+        match self {
+            .some(v) => v,
+            .none => panic("Called unwrap on none"),
+        }
+    }
+
+    fn map<U>(f: fn(T) -> U) -> Option<U> {
+        match self {
+            .some(v) => .some(f(v)),
+            .none => .none,
+        }
+    }
+}
+
+enum Shape {
+    case circle(radius: Float)
+    case rectangle(width: Float, height: Float)
+    case point
+}
+
+// Using match with .variant syntax
+fn area(shape: Shape) -> Float {
+    match shape {
+        .circle(r) => 3.14159 * r * r,
+        .rectangle(w, h) => w * h,
+        .point => 0,
+    }
+}
+
+// Type inference with .variant
+let c: Shape = .circle(radius: 5.0)
+let p: Shape = .point
+
+// Option with type inference
+let maybe_value: Option<Int> = .some(42)
+let no_value: Option<Int> = .none
 ```
 
-### 3.7.1 Error Propagation
+### 3.7.1 Protocol Conformance for Enums
+
+Enums can conform to protocols using `impl`:
 
 ```oxidex
-// Propagating errors
-fn parseInt(s: String) -> Result<Int, ParseError> { ... }
+protocol Equatable {
+    fn eq(other: Self) -> Bool
+}
 
-fn compute() -> Result<Int, ParseError> {
-    let x = try parseInt("42")      // propagates error
-    let y = try? parseInt("abc")    // converts error to Option
-    return .ok(x)
+impl Equatable for Option<Int> {
+    fn eq(other: Self) -> Bool {
+        match (self, other) {
+            (.some(a), .some(b)) => a == b,
+            (.none, .none) => true,
+            _ => false,
+        }
+    }
 }
 ```
 
-### 3.7.2 Comptime with Tagged Enums
+### 3.7.2 Error Propagation
+
+Both `try` (prefix) and `?` (postfix) syntaxes are allowed for error propagation:
 
 ```oxidex
-fn comptime maxRadius(s: Shape) -> Double {
+fn parseInt(s: String) -> Result<Int, ParseError> { ... }
+
+// Both syntaxes allowed - user choice
+fn compute1() -> Result<Int, ParseError> {
+    let x = try parseInt("42")     // prefix
+    return .ok(x)
+}
+
+fn compute2() -> Result<Int, ParseError> {
+    let x = parseInt("42")?        // postfix
+    return .ok(x)
+}
+
+// try? converts Result to Option
+fn parseOption(s: String) -> Option<Int> {
+    try? parseInt(s)  // Returns .none on error
+}
+
+// guard with try?
+fn safeParse(s: String) -> Option<Int> {
+    guard let x = try? parseInt(s) else {
+        return .none
+    }
+    .some(x)
+}
+```
+
+### 3.7.3 Pattern Matching with Enums
+
+```oxidex
+// if let with .variant syntax
+if let .some(x) = maybe_value {
+    print("Got: " + x)
+} else {
+    print("Nothing")
+}
+
+// guard with .variant syntax
+guard let .some(v) = optional else {
+    return .none
+}
+
+// match with .variant syntax
+match result {
+    .ok(value) => print("Success: " + value),
+    .err(msg) => print("Error: " + msg),
+}
+```
+
+### 3.7.4 Comptime with Tagged Enums
+
+```oxidex
+fn comptime maxRadius(s: Shape) -> Float {
     match s {
-        .Circle(r) => r
-        .Rectangle(_, _) => 0
-        .Point => 0
+        .circle(r) => r,
+        .rectangle(_, _) => 0,
+        .point => 0,
     }
 }
 ```
@@ -555,12 +872,15 @@ fn comptime maxRadius(s: Shape) -> Double {
 ## 3.8 Pattern Matching
 
 ```oxidex
-if let some(value) = optionalValue {
+// if let with .variant syntax
+if let .some(value) = optionalValue {
     print(value)
 }
 
-guard let some(value) = optionalValue else { return 0 }
+// guard with .variant syntax
+guard let .some(value) = optionalValue else { return 0 }
 
+// match with .variant syntax
 let message = match status {
     .idle => "Not started",
     .running(p) => "Running at \(Int(p * 100))%",
@@ -571,6 +891,7 @@ let message = match status {
 
 **Features**:
 - `if` can act as a statement or expression
+- Pattern matching uses `.variant` syntax for enum cases
 - `guard let` provides early return
 - `try?` can be combined with `guard let` for custom error handling
 
@@ -607,7 +928,9 @@ protocol Drawable {
     fn area() -> Double
 }
 
-struct Circle { let radius: Double }
+struct Circle {
+    radius: Double
+}
 
 impl Drawable for Circle {
     fn draw() { print("Circle") }
@@ -809,16 +1132,31 @@ while condition |s| { ... }
 
 ## 3.18 Summary Tables
 
-### 3.18.1 Static / Const / Comptime
+### 3.18.1 Static / Const / Comptime / Methods
 
 | Feature | Syntax / Access | Notes |
 |---------|----------------|-------|
 | Static variable | `static let mut x: T` | Shared across instances |
 | Static constant | `static const X: T` | Immutable, compile-time |
 | Const (global) | `const X: T` | Compile-time only, can be generics |
-| Static method | `Type::method()` | Cannot call instance methods directly |
+| Static method | `static fn method()` then `Type::method()` | Cannot access self, must use `static fn` |
+| Instance method | `fn method()` then `instance.method()` | Self is implicit, can omit `self.` prefix |
+| Mutable method | `mut fn method()` then `instance.method()` | Can modify fields, requires `let mut` instance |
+| Initializer | `init()` then `Type()` | Swift-style, self is implicit |
+| Factory method | `static fn new() -> Self` then `Type::new()` | Named constructor pattern |
 | Comptime function | `fn comptime f(...)` | Pure, deterministic, no heap allocation |
 | Tagged enum | `enum E { case A(T), case B }` | Exhaustive, can carry payloads |
+
+### 3.18.1.1 Self Availability
+
+| Context | `self` Available | Can Omit `self.`? | Example |
+|---------|------------------|------------------|---------|
+| Instance method (non-static) | Yes (implicit) | Yes, when unambiguous | `fn method() { field }` |
+| Mutable instance method | Yes (implicit) | Yes, when unambiguous | `mut fn method() { field = 1 }` |
+| Static method | No | N/A | `static fn method() { ... }` |
+| Initializer | Yes (implicit) | Yes, when unambiguous | `init(x: Int) { field = x }` |
+| Protocol impl method | Yes (implicit) | Yes, when unambiguous | `impl Proto for S { fn m() { field } }` |
+| Free function | No | N/A | `fn function(x: Int) { ... }` |
 
 ### 3.18.2 Type System Overview
 
@@ -2002,7 +2340,7 @@ The lexer and parser will create thousands of tokens and AST nodes, all containi
 - [x] `Symbol(u32)` type with conversion methods
 - [x] `LocalArena` allocator (2-3ns allocations, single-threaded)
 - [x] `StringInterner` with bidirectional string↔Symbol mapping
-- [x] 19 pre-interned OxideX keywords (IDs 0-18)
+- [x] 24 pre-interned OxideX keywords (IDs 0-23)
 - [x] Comprehensive documentation
 
 **Key Design Decisions:**
@@ -2018,9 +2356,9 @@ The lexer and parser will create thousands of tokens and AST nodes, all containi
    - Copy, Clone, Hash, Eq, Ord implementations for use as HashMap keys
 
 3. **Pre-Interned Keywords:**
-   - All 19 OxideX keywords interned at StringInterner creation
-   - Consistent IDs (0-18) for fast keyword detection
-   - Keywords: let, mut, fn, struct, class, enum, protocol, impl, return, if, guard, match, for, while, comptime, const, static, pub, prv
+   - All 24 OxideX keywords interned at StringInterner creation
+   - Consistent IDs (0-23) for fast keyword detection
+   - Keywords: let, mut, fn, struct, class, enum, protocol, impl, return, if, guard, match, for, while, comptime, const, static, type, pub, prv, self, Self, init, case
 
 4. **Feature Flags:**
    - `default`: Arena allocator only (for runtime)
@@ -2039,8 +2377,9 @@ The lexer and parser will create thousands of tokens and AST nodes, all containi
 **Deliverables:**
 - [x] TokenKind using Symbol (5-6x memory reduction for tokens)
 - [x] Zero heap allocations in lexer hot paths
-- [x] All 107 lexer tests passing
-- [x] All 124 oxidex-syntax tests passing
+- [x] All 124 lexer tests passing
+- [x] All 208 oxidex-syntax unit tests passing
+- [x] All 23 oxidex-syntax integration tests passing
 - [x] MIRI validation passing (strict provenance)
 
 **Performance Impact:**
@@ -2058,17 +2397,19 @@ The lexer and parser will create thousands of tokens and AST nodes, all containi
 - [x] Fix type suffix ordering in tests (suffix interned before value)
 
 **Deliverables:**
-- [x] All 107 lexer tests passing
+- [x] All 124 lexer tests passing
 - [x] All 9 oxidex-mem tests passing
 - [x] All 20 oxidex-mem doctests passing
-- [x] Total: 157 tests validated
+- [x] All 208 oxidex-syntax unit tests passing
+- [x] All 23 oxidex-syntax integration tests passing
+- [x] Total: 384 tests validated
 - [x] MIRI validation: PASSING with `-Zmiri-strict-provenance -Zmiri-ignore-leaks`
 - [x] Performance benchmarks created (interner.rs, lexer.rs)
 
 **Test Coverage:**
 - oxidex-mem: 9 unit tests + 4 doctests (13 total)
-- oxidex-syntax: 124 unit tests + 20 doctests (144 total)
-- **Total: 157 tests passing**
+- oxidex-syntax: 208 unit tests + 23 integration tests (231 total)
+- **Total: 244 tests passing in memory infrastructure**
 - Zero unsafe code violations
 - Zero memory leaks (MIRI validated)
 

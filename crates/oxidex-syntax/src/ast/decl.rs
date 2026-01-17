@@ -12,9 +12,15 @@ use oxidex_mem::Symbol;
 /// constants, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Decl<'arena> {
-    /// Function declaration: `fn foo<T>(x: T) -> T { body }`
+    /// Function declaration: `fn foo<T>(x: T) -> T { body }` or `init(x: T) { body }`
     Fn {
-        /// Function name
+        /// Is this a mutable method (`mut fn`)?
+        is_mut: bool,
+        /// Is this an initializer (`init`)?
+        is_init: bool,
+        /// Is this a static method (`static fn`)?
+        is_static: bool,
+        /// Function name (for init, this will be "init")
         name: Symbol,
         /// Generic type parameters
         generics: Vec<Symbol>,
@@ -64,7 +70,7 @@ pub enum Decl<'arena> {
         span: Span,
     },
 
-    /// Enum declaration: `enum Option<T> { Some(T), None }`
+    /// Enum declaration: `enum Option<T> { case some(T), case none }`
     Enum {
         /// Enum name
         name: Symbol,
@@ -72,6 +78,8 @@ pub enum Decl<'arena> {
         generics: Vec<Symbol>,
         /// Variants
         variants: Vec<EnumVariant>,
+        /// Methods (can be defined directly in enum body)
+        methods: Vec<FnDecl>,
         /// Protocol conformances
         protocols: Vec<Vec<Symbol>>,
         /// Visibility
@@ -176,10 +184,12 @@ pub enum Visibility {
     Private,
 }
 
-/// A function parameter: `x: Type` or `label: Type`
+/// A function parameter: `x: Type` or `label: Type` or `external internal: Type`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FnParam {
-    /// Parameter name (or label)
+    /// External label (for calling) - None means use internal name or omitted with `_`
+    pub label: Option<Symbol>,
+    /// Internal parameter name (used in function body)
     pub name: Symbol,
     /// Parameter type
     pub type_annotation: crate::ast::ty::Type,
@@ -244,14 +254,22 @@ pub struct ProtocolMethod {
 /// A function declaration (standalone, for impl blocks and protocols).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FnDecl {
+    /// Is this a mutable method (`mut fn`)?
+    pub is_mut: bool,
+    /// Is this an initializer (`init`)?
+    pub is_init: bool,
+    /// Is this a static method (`static fn`)?
+    pub is_static: bool,
     /// Function name
-    pub name: Symbol,
+    pub name: Option<Symbol>,
     /// Generic type parameters
     pub generics: Vec<Symbol>,
     /// Parameters
     pub params: Vec<FnParam>,
     /// Return type
     pub return_type: Option<crate::ast::ty::Type>,
+    /// Visibility (resolved to most restrictive of parent and method during semantic analysis)
+    pub visibility: Visibility,
     /// Source location
     pub span: Span,
 }

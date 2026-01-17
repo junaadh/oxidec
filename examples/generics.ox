@@ -22,8 +22,8 @@ impl<T> Box<T> {
         Self { value }
     }
 
-    fn get(&self) -> T {
-        self.value
+    fn get() -> T {
+        value
     }
 }
 

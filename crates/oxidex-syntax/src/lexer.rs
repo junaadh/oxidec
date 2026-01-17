@@ -32,9 +32,9 @@
 //! - Target: > 100k LOC/sec
 
 use crate::error::{LexerError, LexerResult};
+use crate::keywords;
 use crate::span::Span;
 use crate::token::{Token, TokenKind};
-use crate::keywords;
 use oxidex_mem::{StringInterner, Symbol};
 use std::iter::Peekable;
 use std::str::Chars;
@@ -226,7 +226,8 @@ impl<'input> Lexer<'input> {
     #[must_use]
     pub fn clone_interner(&self) -> StringInterner {
         // Create a new interner and copy all interned strings
-        let mut new_interner = StringInterner::with_pre_interned(keywords::KEYWORDS);
+        let mut new_interner =
+            StringInterner::with_pre_interned(keywords::KEYWORDS);
         for id in 0..self.interner.len() {
             let sym = Symbol::new(id as u32);
             if let Some(s) = self.interner.resolve(sym) {
@@ -255,7 +256,9 @@ impl<'input> Lexer<'input> {
     ///
     /// Returns a `LexerError` if the source contains invalid characters that
     /// cannot be recovered from.
-    pub fn lex_with_interner(mut self) -> LexerResult<(Vec<Token>, StringInterner)> {
+    pub fn lex_with_interner(
+        mut self,
+    ) -> LexerResult<(Vec<Token>, StringInterner)> {
         // Initialize the character iterator
         self.chars = Some(self.input.chars().peekable());
 
@@ -581,7 +584,7 @@ impl<'input> Lexer<'input> {
         // Intern the string to get a Symbol
         let sym = self.interner.intern(text);
 
-        // Check if it's a keyword by Symbol ID (keywords are 0-18)
+        // Check if it's a keyword by Symbol ID (keywords are 0-22)
         // Also check for boolean literals and nil
         match text {
             "let" => TokenKind::Let,
@@ -604,6 +607,10 @@ impl<'input> Lexer<'input> {
             "type" => TokenKind::Type,
             "pub" => TokenKind::Pub,
             "prv" => TokenKind::Prv,
+            "self" => TokenKind::SelfValue,
+            "Self" => TokenKind::SelfType,
+            "init" => TokenKind::Init,
+            "case" => TokenKind::Case,
             "true" => TokenKind::BoolLiteral(true),
             "false" => TokenKind::BoolLiteral(false),
             "nil" => TokenKind::Nil,
@@ -1061,23 +1068,12 @@ mod tests {
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 
-        let syms = intern_for_test_many(&["0xFF", "0xff", "0xabCD", "0xDEAD_BEEF"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::IntegerLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::IntegerLiteral(syms[2], None)
-        );
-        assert_eq!(
-            result[3].kind,
-            TokenKind::IntegerLiteral(syms[3], None)
-        );
+        let syms =
+            intern_for_test_many(&["0xFF", "0xff", "0xabCD", "0xDEAD_BEEF"]);
+        assert_eq!(result[0].kind, TokenKind::IntegerLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::IntegerLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::IntegerLiteral(syms[2], None));
+        assert_eq!(result[3].kind, TokenKind::IntegerLiteral(syms[3], None));
     }
 
     #[test]
@@ -1087,18 +1083,9 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         let syms = intern_for_test_many(&["0b1010", "0b0011", "0b1111_0000"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::IntegerLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::IntegerLiteral(syms[2], None)
-        );
+        assert_eq!(result[0].kind, TokenKind::IntegerLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::IntegerLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::IntegerLiteral(syms[2], None));
     }
 
     #[test]
@@ -1108,22 +1095,10 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         let syms = intern_for_test_many(&["3.14", "0.5", "1.0", "10.0"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::FloatLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::FloatLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::FloatLiteral(syms[2], None)
-        );
-        assert_eq!(
-            result[3].kind,
-            TokenKind::FloatLiteral(syms[3], None)
-        );
+        assert_eq!(result[0].kind, TokenKind::FloatLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::FloatLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::FloatLiteral(syms[2], None));
+        assert_eq!(result[3].kind, TokenKind::FloatLiteral(syms[3], None));
     }
 
     #[test]
@@ -1133,18 +1108,9 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         let syms = intern_for_test_many(&["1e10", "1.5e-5", "3.14e+2"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::FloatLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::FloatLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::FloatLiteral(syms[2], None)
-        );
+        assert_eq!(result[0].kind, TokenKind::FloatLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::FloatLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::FloatLiteral(syms[2], None));
     }
 
     #[test]
@@ -1154,7 +1120,9 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         // Lexer interns suffixes BEFORE values, so order is: u32, 42u32, i64, 1_000i64, f32, 3.14f32
-        let syms = intern_for_test_many(&["u32", "42u32", "i64", "1_000i64", "f32", "3.14f32"]);
+        let syms = intern_for_test_many(&[
+            "u32", "42u32", "i64", "1_000i64", "f32", "3.14f32",
+        ]);
         assert_eq!(
             result[0].kind,
             TokenKind::IntegerLiteral(syms[1], Some(syms[0]))
@@ -1193,19 +1161,11 @@ mod tests {
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 
-        let syms = intern_for_test_many(&["1_000_000", "0xFFFF_FFFF", "3.141_592"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::IntegerLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::FloatLiteral(syms[2], None)
-        );
+        let syms =
+            intern_for_test_many(&["1_000_000", "0xFFFF_FFFF", "3.141_592"]);
+        assert_eq!(result[0].kind, TokenKind::IntegerLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::IntegerLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::FloatLiteral(syms[2], None));
     }
 
     // ===== String Literal Tests =====
@@ -1221,18 +1181,9 @@ mod tests {
 
         assert_eq!(result.len(), 4); // 3 strings + EOF
         let syms = intern_for_test_many(&[r#""hello""#, r#""world""#, r#"""#]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::StringLiteral(syms[0])
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::StringLiteral(syms[1])
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::StringLiteral(syms[2])
-        ); // Unterminated
+        assert_eq!(result[0].kind, TokenKind::StringLiteral(syms[0]));
+        assert_eq!(result[1].kind, TokenKind::StringLiteral(syms[1]));
+        assert_eq!(result[2].kind, TokenKind::StringLiteral(syms[2])); // Unterminated
     }
 
     #[test]
@@ -1244,18 +1195,9 @@ mod tests {
 
         assert_eq!(result.len(), 4); // 3 strings + EOF
         let syms = intern_for_test_many(&["\"hello\"", "\"world\"", "\"\""]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::StringLiteral(syms[0])
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::StringLiteral(syms[1])
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::StringLiteral(syms[2])
-        ); // Empty string
+        assert_eq!(result[0].kind, TokenKind::StringLiteral(syms[0]));
+        assert_eq!(result[1].kind, TokenKind::StringLiteral(syms[1]));
+        assert_eq!(result[2].kind, TokenKind::StringLiteral(syms[2])); // Empty string
     }
 
     #[test]
@@ -1278,23 +1220,16 @@ mod tests {
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 
-        let syms = intern_for_test_many(&[r#""hello\n""#, r#""tab\t""#, r#""quote\"""#, r#""backslash\\""#]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::StringLiteral(syms[0])
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::StringLiteral(syms[1])
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::StringLiteral(syms[2])
-        );
-        assert_eq!(
-            result[3].kind,
-            TokenKind::StringLiteral(syms[3])
-        );
+        let syms = intern_for_test_many(&[
+            r#""hello\n""#,
+            r#""tab\t""#,
+            r#""quote\"""#,
+            r#""backslash\\""#,
+        ]);
+        assert_eq!(result[0].kind, TokenKind::StringLiteral(syms[0]));
+        assert_eq!(result[1].kind, TokenKind::StringLiteral(syms[1]));
+        assert_eq!(result[2].kind, TokenKind::StringLiteral(syms[2]));
+        assert_eq!(result[3].kind, TokenKind::StringLiteral(syms[3]));
     }
 
     #[test]
@@ -1371,10 +1306,7 @@ mod tests {
         let syms = intern_for_test_many(&["x", "42"]);
         assert_eq!(result[1].kind, TokenKind::Ident(syms[0]));
         assert_eq!(result[2].kind, TokenKind::Eq);
-        assert_eq!(
-            result[3].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
+        assert_eq!(result[3].kind, TokenKind::IntegerLiteral(syms[1], None));
     }
 
     #[test]
@@ -1388,10 +1320,7 @@ mod tests {
         assert_eq!(result[0].kind, TokenKind::Let);
         let syms = intern_for_test_many(&["x", "42"]);
         assert_eq!(result[1].kind, TokenKind::Ident(syms[0]));
-        assert_eq!(
-            result[3].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
+        assert_eq!(result[3].kind, TokenKind::IntegerLiteral(syms[1], None));
     }
 
     // ===== Edge Cases =====
@@ -1403,23 +1332,14 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         let syms = intern_for_test_many(&["0", "00", "0.0"]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::IntegerLiteral(syms[0], None)
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::IntegerLiteral(syms[1], None)
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::FloatLiteral(syms[2], None)
-        );
+        assert_eq!(result[0].kind, TokenKind::IntegerLiteral(syms[0], None));
+        assert_eq!(result[1].kind, TokenKind::IntegerLiteral(syms[1], None));
+        assert_eq!(result[2].kind, TokenKind::FloatLiteral(syms[2], None));
     }
 
     #[test]
     fn test_lexer_all_keywords() {
-        let source = "let mut fn struct class enum protocol impl return if guard match for while comptime const static pub prv";
+        let source = "let mut fn struct class enum protocol impl return if guard match for while comptime const static pub prv self Self init case";
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 
@@ -1442,6 +1362,10 @@ mod tests {
         assert_eq!(result[16].kind, TokenKind::Static);
         assert_eq!(result[17].kind, TokenKind::Pub);
         assert_eq!(result[18].kind, TokenKind::Prv);
+        assert_eq!(result[19].kind, TokenKind::SelfValue);
+        assert_eq!(result[20].kind, TokenKind::SelfType);
+        assert_eq!(result[21].kind, TokenKind::Init);
+        assert_eq!(result[22].kind, TokenKind::Case);
     }
 
     #[test]
@@ -1469,6 +1393,53 @@ mod tests {
         assert!(has_fn);
         assert!(has_let);
         assert!(has_return);
+    }
+
+    // ===== Additional Keyword Tests =====
+
+    #[test]
+    fn test_lexer_keyword_self() {
+        let source = "self";
+        let lexer = Lexer::new(source);
+        let result = lexer.lex().unwrap();
+
+        assert_eq!(result.len(), 2); // self + EOF
+        assert_eq!(result[0].kind, TokenKind::SelfValue);
+        assert_eq!(result[1].kind, TokenKind::EOF);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_lexer_keyword_Self() {
+        let source = "Self";
+        let lexer = Lexer::new(source);
+        let result = lexer.lex().unwrap();
+
+        assert_eq!(result.len(), 2); // Self + EOF
+        assert_eq!(result[0].kind, TokenKind::SelfType);
+        assert_eq!(result[1].kind, TokenKind::EOF);
+    }
+
+    #[test]
+    fn test_lexer_keyword_init() {
+        let source = "init";
+        let lexer = Lexer::new(source);
+        let result = lexer.lex().unwrap();
+
+        assert_eq!(result.len(), 2); // init + EOF
+        assert_eq!(result[0].kind, TokenKind::Init);
+        assert_eq!(result[1].kind, TokenKind::EOF);
+    }
+
+    #[test]
+    fn test_lexer_keyword_case() {
+        let source = "case";
+        let lexer = Lexer::new(source);
+        let result = lexer.lex().unwrap();
+
+        assert_eq!(result.len(), 2); // case + EOF
+        assert_eq!(result[0].kind, TokenKind::Case);
+        assert_eq!(result[1].kind, TokenKind::EOF);
     }
 
     // ===== Additional Numeric Tests =====
@@ -1612,27 +1583,14 @@ mod tests {
         let result = lexer.lex().unwrap();
 
         assert_eq!(result.len(), 6); // 5 strings + EOF
-        let syms = intern_for_test_many(&["\"a\"", "\"b\"", "\"c\"", "\"d\"", "\"e\""]);
-        assert_eq!(
-            result[0].kind,
-            TokenKind::StringLiteral(syms[0])
-        );
-        assert_eq!(
-            result[1].kind,
-            TokenKind::StringLiteral(syms[1])
-        );
-        assert_eq!(
-            result[2].kind,
-            TokenKind::StringLiteral(syms[2])
-        );
-        assert_eq!(
-            result[3].kind,
-            TokenKind::StringLiteral(syms[3])
-        );
-        assert_eq!(
-            result[4].kind,
-            TokenKind::StringLiteral(syms[4])
-        );
+        let syms = intern_for_test_many(&[
+            "\"a\"", "\"b\"", "\"c\"", "\"d\"", "\"e\"",
+        ]);
+        assert_eq!(result[0].kind, TokenKind::StringLiteral(syms[0]));
+        assert_eq!(result[1].kind, TokenKind::StringLiteral(syms[1]));
+        assert_eq!(result[2].kind, TokenKind::StringLiteral(syms[2]));
+        assert_eq!(result[3].kind, TokenKind::StringLiteral(syms[3]));
+        assert_eq!(result[4].kind, TokenKind::StringLiteral(syms[4]));
     }
 
     // ===== Operator Combination Tests =====
@@ -1971,7 +1929,7 @@ mod tests {
 
     #[test]
     fn test_lexer_fat_arrow() {
-        let source = "case => value";
+        let source = "key => value";
         let lexer = Lexer::new(source);
         let result = lexer.lex().unwrap();
 

@@ -1,11 +1,11 @@
 // Protocols - Demonstrates protocol definitions and conformance
 
 protocol Display {
-    fn to_string(&self) -> String
+    fn to_string() -> String
 }
 
 protocol Clone {
-    fn clone(&self) -> Self
+    fn clone() -> Self
 }
 
 struct Point {
@@ -14,8 +14,8 @@ struct Point {
 }
 
 impl Display for Point {
-    fn to_string(&self) -> String {
-        "Point(" + self.x + ", " + self.y + ")"
+    fn to_string() -> String {
+        "Point(" + x + ", " + y + ")"
     }
 }
 
@@ -24,8 +24,8 @@ struct Counter {
 }
 
 impl Clone for Counter {
-    fn clone(&self) -> Self {
-        Self { count: self.count }
+    fn clone() -> Self {
+        Self { count }
     }
 }
 
