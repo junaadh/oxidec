@@ -7,7 +7,7 @@
 //! - AST inspection
 
 use crate::ast::expr::InterpolationPart;
-use crate::ast::{Expr, Stmt, Type};
+use crate::ast::{Decl, Expr, Stmt, Type};
 use oxidex_mem::StringInterner;
 use std::fmt;
 
@@ -711,6 +711,519 @@ impl PrettyPrinter {
             }
         }
     }
+
+    /// Pretty-prints a declaration.
+    #[must_use]
+    pub fn print_decl(&mut self, decl: &Decl) -> String {
+        match decl {
+            Decl::Fn {
+                is_mut,
+                is_init,
+                is_static,
+                name,
+                generics,
+                params,
+                return_type,
+                body,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                // Visibility
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => parts.push("prv".to_string()),
+                }
+
+                // Modifiers
+                if *is_static {
+                    parts.push("static".to_string());
+                }
+                if *is_mut {
+                    parts.push("mut".to_string());
+                }
+
+                // Function keyword or init
+                if *is_init {
+                    parts.push("init".to_string());
+                } else {
+                    parts.push("fn".to_string());
+                }
+
+                // Name
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                // Generics
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                // Parameters
+                let param_strs: Vec<String> = params
+                    .iter()
+                    .map(|p| {
+                        let name_str = self.interner.resolve(p.name).unwrap_or("<unknown>");
+                        let type_str = self.print_type(&p.type_annotation);
+                        match &p.label {
+                            Some(label) => {
+                                let label_str = self.interner.resolve(*label).unwrap_or("");
+                                format!("{} {}: {}", label_str, name_str, type_str)
+                            }
+                            None => format!("{}: {}", name_str, type_str),
+                        }
+                    })
+                    .collect();
+                parts.push(format!("({})", param_strs.join(", ")));
+
+                // Return type
+                if let Some(ret_type) = return_type {
+                    parts.push("->".to_string());
+                    parts.push(self.print_type(ret_type));
+                }
+
+                // Body
+                let body_str = self.print_expr(body);
+                format!("{} {}", parts.join(" "), body_str)
+            }
+
+            Decl::Struct {
+                name,
+                generics,
+                fields,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("struct".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        let name_str = self.interner.resolve(f.name).unwrap_or("<unknown>");
+                        let type_str = self.print_type(&f.type_annotation);
+                        format!("{}: {}", name_str, type_str)
+                    })
+                    .collect();
+
+                format!("{} {{ {} }}", parts.join(" "), field_strs.join(", "))
+            }
+
+            Decl::Class {
+                name,
+                generics,
+                superclass,
+                fields,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("class".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                if let Some(super_name) = superclass {
+                    let super_parts: Vec<String> = super_name
+                        .iter()
+                        .map(|s| self.interner.resolve(*s).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!(": {}", super_parts.join("::")));
+                }
+
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        let name_str = self.interner.resolve(f.name).unwrap_or("<unknown>");
+                        let type_str = self.print_type(&f.type_annotation);
+                        format!("{}: {}", name_str, type_str)
+                    })
+                    .collect();
+
+                format!("{} {{ {} }}", parts.join(" "), field_strs.join(", "))
+            }
+
+            Decl::Enum {
+                name,
+                generics,
+                variants,
+                methods,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("enum".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                let variant_strs: Vec<String> = variants
+                    .iter()
+                    .map(|v| self.print_enum_variant(v))
+                    .collect();
+
+                let method_strs: Vec<String> = methods
+                    .iter()
+                    .map(|m| self.print_fn_decl(m))
+                    .collect();
+
+                let all_items: Vec<String> = variant_strs
+                    .into_iter()
+                    .chain(method_strs.into_iter())
+                    .collect();
+
+                format!("{} {{ {} }}", parts.join(" "), all_items.join(", "))
+            }
+
+            Decl::Protocol {
+                name,
+                generics,
+                methods,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("protocol".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                let method_strs: Vec<String> = methods
+                    .iter()
+                    .map(|m| self.print_protocol_method(m))
+                    .collect();
+
+                format!("{} {{ {} }}", parts.join(" "), method_strs.join(", "))
+            }
+
+            Decl::Impl {
+                type_path,
+                protocol,
+                methods,
+                ..
+            } => {
+                let mut parts = vec!["impl".to_string()];
+
+                let type_str: Vec<String> = type_path
+                    .iter()
+                    .map(|t| self.interner.resolve(*t).unwrap_or("<unknown>").to_string())
+                    .collect();
+
+                if let Some(proto_path) = protocol {
+                    let proto_str: Vec<String> = proto_path
+                        .iter()
+                        .map(|t| self.interner.resolve(*t).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("{} for {}", proto_str.join("::"), type_str.join("::")));
+                } else {
+                    parts.push(type_str.join("::"));
+                }
+
+                let method_strs: Vec<String> = methods
+                    .iter()
+                    .map(|m| self.print_fn_decl(m))
+                    .collect();
+
+                format!("{} {{ {} }}", parts.join(" "), method_strs.join(", "))
+            }
+
+            Decl::Const {
+                name,
+                type_annotation,
+                value,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("const".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>").to_string();
+                parts.push(name_str.clone());
+
+                parts.push(":".to_string());
+                parts.push(self.print_type(type_annotation));
+
+                parts.push("=".to_string());
+
+                parts.push(self.print_expr(value));
+
+                format!("{} {};", parts.join(" "), name_str)
+            }
+
+            Decl::Static {
+                name,
+                type_annotation,
+                init,
+                mutable,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("static".to_string());
+                parts.push("let".to_string());
+
+                if *mutable {
+                    parts.push("mut".to_string());
+                }
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>").to_string();
+                parts.push(name_str.clone());
+
+                parts.push(":".to_string());
+                parts.push(self.print_type(type_annotation));
+
+                if let Some(init_value) = init {
+                    parts.push("=".to_string());
+                    parts.push(self.print_expr(init_value));
+                }
+
+                format!("{} {};", parts.join(" "), name_str)
+            }
+
+            Decl::TypeAlias {
+                name,
+                generics,
+                target,
+                visibility,
+                ..
+            } => {
+                let mut parts = Vec::new();
+
+                match visibility {
+                    crate::ast::Visibility::Public => parts.push("pub".to_string()),
+                    crate::ast::Visibility::Private => {}
+                }
+
+                parts.push("type".to_string());
+
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                parts.push(name_str.to_string());
+
+                if !generics.is_empty() {
+                    let generic_names: Vec<String> = generics
+                        .iter()
+                        .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                        .collect();
+                    parts.push(format!("<{}>", generic_names.join(", ")));
+                }
+
+                parts.push("=".to_string());
+                parts.push(self.print_type(target));
+
+                format!("{} {};", parts.join(" "), name_str)
+            }
+        }
+    }
+
+    /// Pretty-prints an enum variant.
+    fn print_enum_variant(&self, variant: &crate::ast::EnumVariant) -> String {
+        match variant {
+            crate::ast::EnumVariant::Unit { name, .. } => {
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                format!("case {}", name_str)
+            }
+            crate::ast::EnumVariant::Tuple { name, fields, .. } => {
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|f| self.print_type(f))
+                    .collect();
+                format!("case {}({})", name_str, field_strs.join(", "))
+            }
+            crate::ast::EnumVariant::Struct { name, fields, .. } => {
+                let name_str = self.interner.resolve(*name).unwrap_or("<unknown>");
+                let field_strs: Vec<String> = fields
+                    .iter()
+                    .map(|f| {
+                        let field_name = self.interner.resolve(f.name).unwrap_or("<unknown>");
+                        let field_type = self.print_type(&f.type_annotation);
+                        format!("{}: {}", field_name, field_type)
+                    })
+                    .collect();
+                format!("case {} {{ {} }}", name_str, field_strs.join(", "))
+            }
+        }
+    }
+
+    /// Pretty-prints a function declaration (for impl blocks, protocols, etc).
+    fn print_fn_decl(&self, decl: &crate::ast::FnDecl) -> String {
+        let mut parts = Vec::new();
+
+        // Visibility
+        match decl.visibility {
+            crate::ast::Visibility::Public => parts.push("pub".to_string()),
+            crate::ast::Visibility::Private => parts.push("prv".to_string()),
+        }
+
+        // Modifiers
+        if decl.is_static {
+            parts.push("static".to_string());
+        }
+        if decl.is_mut {
+            parts.push("mut".to_string());
+        }
+
+        // Function keyword or init
+        if decl.is_init {
+            parts.push("init".to_string());
+        } else {
+            parts.push("fn".to_string());
+        }
+
+        // Name
+        if let Some(name) = decl.name {
+            let name_str = self.interner.resolve(name).unwrap_or("<unknown>");
+            parts.push(name_str.to_string());
+        }
+
+        // Generics
+        if !decl.generics.is_empty() {
+            let generic_names: Vec<String> = decl
+                .generics
+                .iter()
+                .map(|g| self.interner.resolve(*g).unwrap_or("<unknown>").to_string())
+                .collect();
+            parts.push(format!("<{}>", generic_names.join(", ")));
+        }
+
+        // Parameters
+        let param_strs: Vec<String> = decl
+            .params
+            .iter()
+            .map(|p| {
+                let name_str = self.interner.resolve(p.name).unwrap_or("<unknown>");
+                let type_str = self.print_type(&p.type_annotation);
+                match &p.label {
+                    Some(label) => {
+                        let label_str = self.interner.resolve(*label).unwrap_or("");
+                        format!("{} {}: {}", label_str, name_str, type_str)
+                    }
+                    None => format!("{}: {}", name_str, type_str),
+                }
+            })
+            .collect();
+        parts.push(format!("({})", param_strs.join(", ")));
+
+        // Return type
+        if let Some(ret_type) = &decl.return_type {
+            parts.push("->".to_string());
+            parts.push(self.print_type(ret_type));
+        }
+
+        parts.join(" ")
+    }
+
+    /// Pretty-prints a protocol method signature.
+    fn print_protocol_method(&self, method: &crate::ast::ProtocolMethod) -> String {
+        let mut parts = Vec::new();
+
+        parts.push("fn".to_string());
+
+        let name_str = self.interner.resolve(method.name).unwrap_or("<unknown>");
+        parts.push(name_str.to_string());
+
+        // Parameters
+        let param_strs: Vec<String> = method
+            .params
+            .iter()
+            .map(|p| {
+                let name_str = self.interner.resolve(p.name).unwrap_or("<unknown>");
+                let type_str = self.print_type(&p.type_annotation);
+                match &p.label {
+                    Some(label) => {
+                        let label_str = self.interner.resolve(*label).unwrap_or("");
+                        format!("{} {}: {}", label_str, name_str, type_str)
+                    }
+                    None => format!("{}: {}", name_str, type_str),
+                }
+            })
+            .collect();
+        parts.push(format!("({})", param_strs.join(", ")));
+
+        // Return type
+        if let Some(ret_type) = &method.return_type {
+            parts.push("->".to_string());
+            parts.push(self.print_type(ret_type));
+        }
+
+        format!("{};", parts.join(" "))
+    }
 }
 
 impl fmt::Display for Expr<'_> {
@@ -724,7 +1237,7 @@ impl fmt::Display for Expr<'_> {
 mod tests {
     use super::*;
     use crate::Span;
-    use crate::ast::{Expr, Type};
+    use crate::ast::{Decl, EnumVariant, Expr, FnDecl, FnParam, StructField, Type, Visibility};
     use crate::keywords;
 
     // Helper function to create a printer with pre-interned keywords
@@ -982,6 +1495,134 @@ mod tests {
 
         let printer = PrettyPrinter::new(interner);
         assert_eq!(printer.print_type(&ty), "Int?");
+    }
+
+    #[test]
+    fn test_print_decl_struct() {
+        let mut interner = StringInterner::new();
+        let name = sym(&mut interner, "Point");
+        let field1_name = sym(&mut interner, "x");
+        let field1_type = Type::Simple {
+            name: sym(&mut interner, "Float"),
+            span: Span::new(4, 9, 1, 5, 1, 10),
+        };
+        let field2_name = sym(&mut interner, "y");
+        let field2_type = Type::Simple {
+            name: sym(&mut interner, "Float"),
+            span: Span::new(11, 16, 1, 12, 1, 17),
+        };
+
+        let decl = Decl::Struct {
+            name,
+            generics: vec![],
+            fields: vec![
+                StructField {
+                    name: field1_name,
+                    type_annotation: field1_type,
+                    span: Span::new(4, 9, 1, 5, 1, 10),
+                },
+                StructField {
+                    name: field2_name,
+                    type_annotation: field2_type,
+                    span: Span::new(11, 16, 1, 12, 1, 17),
+                },
+            ],
+            protocols: vec![],
+            visibility: Visibility::Private,
+            span: Span::new(0, 18, 1, 1, 1, 19),
+        };
+
+        let mut printer = PrettyPrinter::new(interner);
+        let output = printer.print_decl(&decl);
+        assert!(output.contains("struct"));
+        assert!(output.contains("Point"));
+        assert!(output.contains("x: Float"));
+        assert!(output.contains("y: Float"));
+    }
+
+    #[test]
+    fn test_print_decl_enum() {
+        let mut interner = StringInterner::new();
+        let name = sym(&mut interner, "Option");
+        let variant1_name = sym(&mut interner, "none");
+        let variant2_name = sym(&mut interner, "some");
+        let type_param = Type::Simple {
+            name: sym(&mut interner, "T"),
+            span: Span::new(11, 12, 1, 12, 1, 13),
+        };
+
+        let decl = Decl::Enum {
+            name,
+            generics: vec![sym(&mut interner, "T")],
+            variants: vec![
+                EnumVariant::Unit {
+                    name: variant1_name,
+                    span: Span::new(14, 18, 1, 15, 1, 19),
+                },
+                EnumVariant::Tuple {
+                    name: variant2_name,
+                    fields: vec![type_param],
+                    span: Span::new(20, 26, 1, 21, 1, 27),
+                },
+            ],
+            methods: vec![],
+            protocols: vec![],
+            visibility: Visibility::Private,
+            span: Span::new(0, 27, 1, 1, 1, 28),
+        };
+
+        let mut printer = PrettyPrinter::new(interner);
+        let output = printer.print_decl(&decl);
+        assert!(output.contains("enum"));
+        assert!(output.contains("Option"));
+        assert!(output.contains("case none"));
+        assert!(output.contains("case some(T)"));
+    }
+
+    #[test]
+    fn test_print_decl_impl() {
+        let mut interner = StringInterner::new();
+        let type_name = sym(&mut interner, "Point");
+        let method_name = sym(&mut interner, "new");
+        let param_name = sym(&mut interner, "x");
+        let param_type = Type::Simple {
+            name: sym(&mut interner, "Int"),
+            span: Span::new(20, 23, 1, 21, 1, 24),
+        };
+        let return_type = Type::Simple {
+            name: sym(&mut interner, "Self"),
+            span: Span::new(27, 31, 1, 28, 1, 32),
+        };
+
+        let decl = Decl::Impl {
+            type_path: vec![type_name],
+            protocol: None,
+            methods: vec![FnDecl {
+                is_mut: false,
+                is_init: false,
+                is_static: true,
+                name: Some(method_name),
+                generics: vec![],
+                params: vec![FnParam {
+                    label: None,
+                    name: param_name,
+                    type_annotation: param_type,
+                    span: Span::new(20, 23, 1, 21, 1, 24),
+                }],
+                return_type: Some(return_type),
+                visibility: Visibility::Public,
+                span: Span::new(6, 32, 1, 7, 1, 33),
+            }],
+            span: Span::new(0, 34, 1, 1, 1, 35),
+        };
+
+        let mut printer = PrettyPrinter::new(interner);
+        let output = printer.print_decl(&decl);
+        assert!(output.contains("impl"));
+        assert!(output.contains("Point"));
+        assert!(output.contains("pub static fn new"));
+        assert!(output.contains("(x: Int)"));
+        assert!(output.contains("-> Self"));
     }
 }
 

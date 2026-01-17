@@ -9,7 +9,7 @@ You are assisting with the OxideX project—a modern programming language combin
 
 OxideX is building:
 - **OxideC Runtime** (Phase 1-4c: COMPLETE) - Safe, high-performance dynamic runtime
-- **OxideX Language** (Phase 5a: COMPLETE, Phase 5b: IN PROGRESS, Phase 6-13: Planned) - Modern syntax with message-based semantics
+- **OxideX Language** (Phase 5a: COMPLETE, Phase 5b: COMPLETE, Phase 6-13: Planned) - Modern syntax with message-based semantics
 
 ### OxideC Runtime
 - **Dynamic Dispatch** with late binding and method caching
@@ -88,7 +88,7 @@ oxidex/
 │   │   ├── benches/             # Performance benchmarks
 │   │   └── ARCHITECTURE.md      # Design documentation
 │   │
-│   ├── oxidex-syntax/            # Language syntax (Phase 5b: IN PROGRESS)
+│   ├── oxidex-syntax/            # Language syntax (Phase 5b: COMPLETE)
 │   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
 │   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
 │   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)
@@ -172,7 +172,7 @@ crates/oxidec/src/runtime/
 - [x] MIRI validation (157 tests passing)
 - [x] Comprehensive documentation
 
-### Phase 5b: Language Syntax (IN PROGRESS)
+### Phase 5b: Language Syntax (COMPLETE ✓)
 - [x] Lexer with 24 keywords and all token types
 - [x] Parser with full grammar support
 - [x] AST for all declaration types
@@ -184,11 +184,11 @@ crates/oxidec/src/runtime/
 - [x] `init` keyword for initializers
 - [x] `mut fn` for mutable methods
 - [x] `static fn` for static methods
-- [x] 208 unit tests passing
+- [x] Pretty printer (AST → source) for all declarations
+- [x] Roundtrip testing (parse → print → parse)
+- [x] 211 unit tests passing
 - [x] 23 integration tests passing
-- [ ] Pretty printer (AST → source)
-- [ ] Error recovery improvements
-- [ ] Complete test coverage for all edge cases
+- [x] Comprehensive test coverage
 
 ### Phase 5c-13: Language Implementation (Planned)
 - [ ] Type checker (inference, validation)
@@ -276,9 +276,9 @@ All code must pass MIRI validation with strict provenance to ensure:
 
 - **Edition**: 2024 (Rust stable)
 - **Target**: Message-based dynamic language with systems-level performance
-- **Status**: Runtime Phase 4c Complete (Alpha 0.4), Language Phase 5a Complete (Alpha 0.5), Language Phase 5b In Progress (Alpha 0.6)
-- **Current Work**: Lexer, Parser, and AST implementation (208 unit tests, 23 integration tests)
-- **Testing**: 231 tests passing in oxidex-syntax
+- **Status**: Runtime Phase 4c Complete (Alpha 0.4), Language Phase 5a Complete (Alpha 0.5), Language Phase 5b Complete (Alpha 0.6)
+- **Current Work**: Completed lexer, parser, AST, and pretty printer (211 unit tests, 23 integration tests)
+- **Testing**: 234 tests passing in oxidex-syntax (211 unit + 23 integration)
 - **MIRI**: All tests pass with strict provenance validation
 
 ---

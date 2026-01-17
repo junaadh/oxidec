@@ -21,48 +21,10 @@ fn pretty_print(program: &oxidex_syntax::ast::Program) -> String {
 
     let mut result = String::new();
     for decl in &program.decls {
-        result.push_str(&format!("{}\n", crate::ast_to_string(&printer, decl)));
+        result.push_str(&printer.print_decl(decl));
+        result.push('\n');
     }
     result
-}
-
-/// Convert an AST declaration to a string representation
-fn ast_to_string(printer: &mut PrettyPrinter, decl: &oxidex_syntax::ast::Decl) -> String {
-    match decl {
-        oxidex_syntax::ast::Decl::Fn { name, params, return_type, body, .. } => {
-            let mut result = format!("fn {}(", printer.print_expr(name));
-            result.push_str(") { ... }");
-            result
-        },
-        oxidex_syntax::ast::Decl::Struct { name, .. } => {
-            format!("struct {} {{ ... }}", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::Enum { name, .. } => {
-            format!("enum {} {{ ... }}", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::Protocol { name, .. } => {
-            format!("protocol {} {{ ... }}", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::Class { name, .. } => {
-            format!("class {} {{ ... }}", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::Impl { type_path, .. } => {
-            let type_str = type_path.iter()
-                .map(|s| printer.print_expr(s))
-                .collect::<Vec<_>>()
-                .join("::");
-            format!("impl {} {{ ... }}", type_str)
-        },
-        oxidex_syntax::ast::Decl::Const { name, .. } => {
-            format!("const {}: ... = ...", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::Static { name, .. } => {
-            format!("static {}: ... = ...", printer.print_expr(name))
-        },
-        oxidex_syntax::ast::Decl::TypeAlias { name, .. } => {
-            format!("type {} = ...", printer.print_expr(name))
-        },
-    }
 }
 
 /// Test round-trip: parse → print → parse should not error

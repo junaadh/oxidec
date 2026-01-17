@@ -30,4 +30,4 @@ pub use expr::Expr;
 pub use stmt::Stmt;
 pub use ty::Type;
 pub use pat::Pattern;
-pub use decl::Decl;
+pub use decl::{Decl, EnumVariant, FnDecl, FnParam, ProtocolMethod, StructField, Visibility};
