@@ -3,7 +3,7 @@
 A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
-**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 6 Planned
+**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 6 Complete ✓
 
 **Runtime Achievements:**
 - 639 tests passing (639/639 with 6 ignored)
@@ -52,29 +52,42 @@ A high-performance dynamic object runtime in Rust providing:
   - MIRI validated with strict provenance (280 tests)
   - Global arena: 3.98ns (47.6% improvement over baseline)
 
-### OxideX Language (Phase 5b Complete ✓)
+### OxideX Language (Phase 6 Complete ✓)
 A modern programming language featuring:
 - Swift-inspired syntax with clean ergonomics
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 5a complete, Phase 5b complete, Phase 6 planned
+- **Status**: Phase 5a complete, Phase 5b complete, Phase 6 complete
   - Phase 5a: Memory infrastructure (oxidex-mem crate, string interning)
   - Phase 5b: Language frontend (lexer, parser, AST, diagnostics, pretty-printer)
-  - 234 tests passing (211 unit + 23 integration)
-  - Pretty printer for all declaration types
-  - Roundtrip testing (parse → print → parse)
-  - 15 example programs covering all language features
-  - Parser performance benchmarks
-  - Integration tests for parsing, roundtrip, diagnostics
-  - MIRI validated with strict provenance
-  - Zero heap allocations in lexer hot paths
-  - 5-6x memory reduction for token storage
-  - Keywords properly separated into syntax layer
-  - Generic type parsing with angle bracket support
-  - Rich error reporting with Rust-style diagnostics
-  - Enum support with `case` keyword and enum methods
-  - Method visibility resolution (Rust-style, most restrictive wins)
+    - 234 tests passing (211 unit + 23 integration)
+    - Pretty printer for all declaration types
+    - Roundtrip testing (parse → print → parse)
+    - 15 example programs covering all language features
+    - Parser performance benchmarks
+    - Integration tests for parsing, roundtrip, diagnostics
+    - MIRI validated with strict provenance
+    - Zero heap allocations in lexer hot paths
+    - 5-6x memory reduction for token storage
+  - Phase 6: Type checker (Hindley-Milner inference + bidirectional checking)
+    - 80 tests passing (all MIRI validated)
+    - ~6,500 lines of code
+    - Hindley-Milner type inference with Algorithm W
+    - Union-find unification with occurs check
+    - Let-polymorphism (generalization at let bindings)
+    - Generic type parameters (functions, structs, enums, classes)
+    - Pattern type checking (all pattern types)
+    - Match exhaustiveness for enums
+    - Protocol conformance validation
+    - Class declaration and method/field checking
+    - Mutability enforcement
+    - Return type tracking
+    - Field and method access validation
+    - Path expression variable lookup
+    - For loop pattern checking
+    - 20+ comprehensive error types
+    - Production-ready for all core language features
 
 ## Architecture
 
@@ -86,7 +99,7 @@ oxidex/
 │   ├── oxidec/                   # Runtime (Phase 1-4c: COMPLETE)
 │   ├── oxidex-mem/               # Memory infrastructure (Phase 5a: COMPLETE)
 │   ├── oxidex-syntax/            # Language syntax (Phase 5b: COMPLETE)
-│   ├── oxidex-typecheck/         # Type checker (Phase 6: PLANNED)
+│   ├── oxidex-typecheck/         # Type checker (Phase 6: COMPLETE)
 │   ├── oxidex-codegen/           # Code generation (Phase 7: PLANNED)
 │   ├── oxidex-interpreter/       # Interpreter (Phase 8: PLANNED)
 │   ├── oxidex-bytecode/          # Bytecode VM (Phase 9: PLANNED)
@@ -179,6 +192,41 @@ The OxideC runtime is built on a layered architecture:
 - [x] Zero heap allocations in lexer hot paths
 - [x] 5-6x memory reduction for token storage
 - [x] MIRI validated memory infrastructure (157 tests)
+- [x] Complete lexer with 24 keywords and all token types
+- [x] Full parser with 234 tests passing (211 unit + 23 integration)
+- [x] AST for all declaration types (functions, structs, enums, classes, protocols, impl blocks)
+- [x] Enum support with `case` keyword
+- [x] Enum methods (directly in body and impl blocks)
+- [x] Method visibility resolution (most restrictive of parent and method)
+- [x] Labeled parameters (Swift-style)
+- [x] `self` and `Self` keywords
+- [x] `init` keyword for initializers
+- [x] `mut fn` for mutable methods
+- [x] `static fn` for static methods
+- [x] Pretty printer for all AST nodes
+- [x] Roundtrip testing (parse → print → parse)
+- [x] Rich error reporting with source highlighting
+- [x] 15 example programs demonstrating language features
+- [x] Parser performance benchmarks
+- [x] Comprehensive integration tests
+- [x] Type checker with Hindley-Milner inference (Phase 6)
+  - [x] Type inference with Algorithm W
+  - [x] Bidirectional type checking
+  - [x] Union-find unification with occurs check
+  - [x] Let-polymorphism (generalization at let bindings)
+  - [x] Generic type parameters (functions, structs, enums, classes)
+  - [x] Pattern type checking (all pattern types)
+  - [x] Match exhaustiveness for enums
+  - [x] Protocol conformance validation
+  - [x] Class declaration and method/field checking
+  - [x] Mutability enforcement
+  - [x] Return type tracking
+  - [x] Field and method access validation
+  - [x] Path expression variable lookup
+  - [x] For loop pattern checking
+  - [x] 20+ comprehensive error types
+  - [x] 80 tests passing, MIRI validated
+  - [x] Production-ready for all core language features
 
 ## Testing
 

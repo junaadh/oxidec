@@ -457,6 +457,7 @@ dependencies = [
 name = "oxidex-typecheck"
 version = "0.3.0"
 dependencies = [
+ "oxidex-mem",
  "oxidex-syntax",
 ]
 
