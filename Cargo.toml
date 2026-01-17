@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/oxidex-log",
+    "crates/oxidex-mem"
+    # "crates/oxidec",
+    # "crates/oxidex-mem",
+    # "crates/oxidex-syntax",
+    # "crates/oxidex-typecheck",
+    # "crates/oxidex-codegen",
+    # "crates/oxidex-interpreter",
+    # "crates/oxidex-bytecode",
+    # "crates/oxidex-jit",
+    # "crates/oxidex-aot",
+    # "crates/oxidex-std",
+    # "crates/oxidex-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Junaadh"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/junaadh/oxidec"
+
+[workspace.dependencies]
+# Runtime
+# oxidec = { path = "crates/oxidec" }
+
+# Memory management
+oxidex-mem = { path = "crates/oxidex-mem" }
+
+# Logging
+oxidex_log = { path = "crates/oxidex-log" }
+
+# Language crates
+# oxidex-syntax = { path = "crates/oxidex-syntax" }
+# oxidex-typecheck = { path = "crates/oxidex-typecheck" }
+# oxidex-codegen = { path = "crates/oxidex-codegen" }
+# oxidex-interpreter = { path = "crates/oxidex-interpreter" }
+# oxidex-bytecode = { path = "crates/oxidex-bytecode" }
+# oxidex-jit = { path = "crates/oxidex-jit" }
+# oxidex-aot = { path = "crates/oxidex-aot" }
+# oxidex-std = { path = "crates/oxidex-std" }
+# oxidex-cli = { path = "crates/oxidex-cli" }
+
+# External dependencies
+# criterion = "0.5"
