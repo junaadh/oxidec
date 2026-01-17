@@ -3,7 +3,7 @@
 A modern message-based dynamic language combining Swift's ergonomic syntax with Rust's safety principles, built on OxideC—a custom Objective-C-inspired runtime.
 
 **Version**: See [Cargo.toml](Cargo.toml) for current version
-**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 5c-13 Planned
+**Status**: Runtime Phase 4c Complete ✓ | Language Phase 5a Complete ✓ | Language Phase 5b Complete ✓ | Language Phase 6 Planned
 
 **Runtime Achievements:**
 - 639 tests passing (639/639 with 6 ignored)
@@ -12,10 +12,20 @@ A modern message-based dynamic language combining Swift's ergonomic syntax with 
 - 5-6x memory reduction for token storage
 - String interning with Symbol(u32) IDs
 - Full Stacked Borrows compliance
-- Complete parser with 169 tests passing
-- Keywords properly separated from memory layer
+
+**Language Frontend Achievements (Phase 5b):**
+- Complete lexer with 29 token types
+- Full parser with 189 tests passing (170 unit + 19 doctest)
+- Pretty-printer for all AST nodes
+- 15 example programs demonstrating language features
+- Parser performance benchmarks
+- Comprehensive integration tests
+- Rich error reporting with source highlighting
+- MIRI validated with strict provenance
+- Zero heap allocations in lexer hot paths
+- 5-6x memory reduction for token storage
+- Keywords properly separated into syntax layer
 - Generic type parsing with angle bracket support
-- Rich error reporting with source highlighting and colors
 
 ## Overview
 
@@ -33,16 +43,19 @@ A high-performance dynamic object runtime in Rust providing:
   - MIRI validated with strict provenance (280 tests)
   - Global arena: 3.98ns (47.6% improvement over baseline)
 
-### OxideX Language (IN PROGRESS)
+### OxideX Language (Phase 5b Complete ✓)
 A modern programming language featuring:
 - Swift-inspired syntax with clean ergonomics
 - Message-based execution where `.method()` compiles to `objc_msgSend`
 - Multiple execution modes (interpret, bytecode, JIT, AOT)
 - Rust-inspired safety with immutability by default
-- **Status**: Phase 5a complete, Phase 5b complete, Phase 5c-13 planned
+- **Status**: Phase 5a complete, Phase 5b complete, Phase 6 planned
   - Phase 5a: Memory infrastructure (oxidex-mem crate, string interning)
-  - Phase 5b: Complete lexer, parser, and diagnostics implementation
-  - 191 tests passing in oxidex-syntax (170 unit + 22 doctest)
+  - Phase 5b: Language frontend (lexer, parser, AST, diagnostics, pretty-printer)
+  - 189 tests passing (170 unit + 19 doctest)
+  - 15 example programs covering all language features
+  - Parser performance benchmarks
+  - Integration tests for parsing, roundtrip, diagnostics
   - MIRI validated with strict provenance
   - Zero heap allocations in lexer hot paths
   - 5-6x memory reduction for token storage
